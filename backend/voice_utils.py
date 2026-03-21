@@ -7,10 +7,11 @@ import soundfile as sf
 import numpy as np
 from scipy.io.wavfile import write
 from openai import OpenAI
+from dotenv import load_dotenv
 
+load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-#hi
+client = OpenAI()
 
 def record_audio(filename="student_input.wav", samplerate=16000):
     print("Press Enter to START recording")

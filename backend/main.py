@@ -5,7 +5,7 @@ from voice_utils import record_audio, transcribe_audio, text_to_speech, play_aud
 from dotenv import load_dotenv
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI()
 
 SUBJECTS = {
     "Math": ["Fractions", "Percentages"],
