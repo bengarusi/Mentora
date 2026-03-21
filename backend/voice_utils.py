@@ -10,7 +10,7 @@ from openai import OpenAI
 
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+#hi
 
 def record_audio(filename="student_input.wav", samplerate=16000):
     print("Press Enter to START recording")

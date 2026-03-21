@@ -60,8 +60,8 @@ print("\nMentora:")
 print(response.output_text)
 
 opening_reply = f"{response.output_text}"
-# audio_reply = text_to_speech(opening_reply)
-# play_audio(audio_reply)
+audio_reply = text_to_speech(opening_reply)
+play_audio(audio_reply)
 
 conversation_history = [
     {"role": "system",
