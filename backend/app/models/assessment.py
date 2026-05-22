@@ -19,12 +19,16 @@ class AssessmentQuestion(Base):
     session_id = Column(
         Integer, ForeignKey("lesson_sessions.id"), nullable=False, index=True
     )
-    difficulty = Column(Integer, nullable=False)  # 1, 2, 3 = increasing
+    set_number = Column(Integer, nullable=False, default=1)  # practice set index (1, 2, 3, ...)
+    difficulty = Column(Integer, nullable=False)  # 1, 2, 3 = relative difficulty within set
     question_text = Column(Text, nullable=False)
-    criteria = Column(Text, nullable=True)  # grading rubric / expected answer
-    student_answer = Column(Text, nullable=True)  # filled on submit
-    is_correct = Column(Boolean, nullable=True)  # graded by LLM
-    feedback = Column(Text, nullable=True)  # per-answer feedback
+    correct_answer = Column(Text, nullable=True)   # expected answer text
+    solution_steps = Column(Text, nullable=True)   # step-by-step solution
+    explanation = Column(Text, nullable=True)       # why this approach works
+    criteria = Column(Text, nullable=True)          # legacy grading rubric (kept for grade_answer compat)
+    student_answer = Column(Text, nullable=True)    # filled on submit
+    is_correct = Column(Boolean, nullable=True)     # graded by LLM
+    feedback = Column(Text, nullable=True)          # per-answer child-friendly feedback
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     session = relationship("LessonSession", back_populates="questions")

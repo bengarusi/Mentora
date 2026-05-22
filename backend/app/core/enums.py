@@ -7,11 +7,11 @@ class Subject(str, Enum):
 
 
 class LessonPhase(str, Enum):
-    EXPLANATION = "explanation"
-    EXAMPLE = "example"
-    ASSESSMENT = "assessment"
-    CORRECTION = "correction"
-    LEVEL_ADJUSTMENT = "level_adjustment"
+    TEACHING = "teaching"
+    PRE_PRACTICE_EXAMPLE = "pre_practice_example"
+    PRACTICE = "practice"
+    PRACTICE_SUMMARY = "practice_summary"
+    SUMMARY = "summary"
     COMPLETED = "completed"
 
 

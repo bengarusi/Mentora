@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from app.schemas.tutor import GeneratedQuestion, GradedAnswer, LevelAdjustment
+from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
 
 
 class LLMError(Exception):
@@ -26,25 +26,31 @@ class LLMProvider(ABC):
     """Strategy interface. Concrete providers (OpenAI, fakes) implement these."""
 
     @abstractmethod
-    def generate_explanation(self, ctx: TutorContext) -> str: ...
+    def generate_teaching_intro(self, ctx: TutorContext) -> str:
+        """Open the teaching phase: explain the topic with examples and invite questions."""
 
     @abstractmethod
-    def generate_example(self, ctx: TutorContext) -> str: ...
+    def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
+        """Respond to one student message during the teaching or summary phase."""
 
     @abstractmethod
-    def chat_reply(self, ctx: TutorContext, student_message: str) -> str: ...
+    def generate_pre_practice_example(self, ctx: TutorContext) -> str:
+        """Produce a fully solved guided example to prepare the student for practice."""
 
     @abstractmethod
-    def generate_questions(self, ctx: TutorContext) -> list[GeneratedQuestion]:
-        """Return exactly 3 questions of increasing difficulty (1, 2, 3)."""
+    def generate_practice_questions(
+        self, ctx: TutorContext, set_number: int
+    ) -> list[GeneratedPracticeQuestion]:
+        """Return exactly 3 practice questions scaled to set_number difficulty."""
 
     @abstractmethod
     def grade_answer(
         self, question_text: str, criteria: str, answer: str
-    ) -> GradedAnswer: ...
+    ) -> GradedAnswer:
+        """Grade one student answer and return is_correct + short feedback."""
 
     @abstractmethod
-    def adjust_level(self, ctx: TutorContext, score: int) -> LevelAdjustment: ...
-
-    @abstractmethod
-    def summarize_session(self, ctx: TutorContext) -> str: ...
+    def generate_lesson_summary(
+        self, ctx: TutorContext, total_correct: int, total_questions: int
+    ) -> str:
+        """Write a short final lesson summary after all practice sets are done."""

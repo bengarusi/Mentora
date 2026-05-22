@@ -3,24 +3,17 @@ from pydantic import BaseModel
 
 # ---- Structured outputs returned by the LLM provider ----
 
-class GeneratedQuestion(BaseModel):
-    difficulty: int  # 1, 2, 3 = increasing
+class GeneratedPracticeQuestion(BaseModel):
+    difficulty: int       # 1, 2, 3 = relative difficulty within the set
     question: str
-    criteria: str  # rubric / expected answer used for grading
-
-
-class GeneratedQuestions(BaseModel):
-    questions: list[GeneratedQuestion]
+    correct_answer: str   # exact expected answer
+    solution_steps: str   # step-by-step solution text
+    explanation: str      # why this approach / what the student should understand
 
 
 class GradedAnswer(BaseModel):
     is_correct: bool
-    feedback: str
-
-
-class LevelAdjustment(BaseModel):
-    direction: str  # "harder" | "easier" | "same"
-    note: str
+    feedback: str         # short, child-friendly sentence
 
 
 # ---- API request / response DTOs for the tutor flow ----

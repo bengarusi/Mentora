@@ -3,16 +3,19 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import LessonPhase, SessionStatus
 from app.lesson.context import LessonContext
-from app.lesson.state import AssessmentState, InvalidLessonAction
+from app.lesson.state import InvalidLessonAction, PracticeState
 from app.llm.provider import LLMError, LLMProvider
 from app.models.session import LessonSession
 from app.models.student import Student
 from app.repositories.session_repo import SessionRepository
-from app.schemas.assessment import (
-    GradedAnswerDTO,
-    QuestionDTO,
-    QuestionResultDTO,
-    SessionSummary,
+from app.schemas.practice import (
+    GradedPracticeItem,
+    PracticeAnswersSubmit,
+    PracticeStartResult,
+    PracticeSubmitResult,
+    PracticeSummaryDTO,
+    PracticeSetResult,
+    PracticeQuestionDTO,
 )
 from app.schemas.session import SessionCreate
 from app.schemas.tutor import PhaseResult, TurnResult
@@ -30,12 +33,10 @@ class TutorService:
 
     # ---- helpers ----
 
-    def build_lesson_context_for_session(
-        self, session: LessonSession
-    ) -> LessonContext:
+    def _build_ctx(self, session: LessonSession) -> LessonContext:
         return LessonContext(self.db, session, self.student, self.llm)
 
-    def get_owned_session_or_raise_404(self, session_id: int) -> LessonSession:
+    def _get_session(self, session_id: int) -> LessonSession:
         session = self.sessions.get_specific_session(session_id, self.student.id)
         if session is None:
             raise HTTPException(
@@ -43,14 +44,24 @@ class TutorService:
             )
         return session
 
+    def _require_phase(self, session: LessonSession, phase: LessonPhase) -> None:
+        if session.phase != phase.value:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"This action requires phase '{phase.value}', current phase is '{session.phase}'.",
+            )
+
+    def _require_practice_phase(self, session: LessonSession) -> None:
+        self._require_phase(session, LessonPhase.PRACTICE)
+
     @staticmethod
-    def wrap_llm_error_as_http_error(exc: LLMError) -> HTTPException:
+    def _llm_error(exc: LLMError) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Tutor service unavailable: {exc}",
         )
 
-    # ---- flow ----
+    # ---- session creation ----
 
     def create_lesson_and_generate_first_explanation(
         self, data: SessionCreate
@@ -62,35 +73,39 @@ class TutorService:
                 topic=data.topic,
                 goal_text=data.goal_text,
                 status=SessionStatus.ACTIVE.value,
-                phase=LessonPhase.EXPLANATION.value,
+                phase=LessonPhase.TEACHING.value,
             )
         )
-        ctx = self.build_lesson_context_for_session(session)
+        ctx = self._build_ctx(session)
         try:
             ctx.state.generate_phase_opening_message(ctx)
         except LLMError as exc:
-            raise self.wrap_llm_error_as_http_error(exc)
+            raise self._llm_error(exc)
         self.db.commit()
         self.db.refresh(session)
         return session
 
+    # ---- chat turn (TEACHING and SUMMARY phases) ----
+
     def send_student_message_and_get_tutor_reply(
         self, session_id: int, text: str
     ) -> TurnResult:
-        session = self.get_owned_session_or_raise_404(session_id)
-        ctx = self.build_lesson_context_for_session(session)
+        session = self._get_session(session_id)
+        ctx = self._build_ctx(session)
         try:
             reply = ctx.state.generate_reply_to_student_message(ctx, text)
         except InvalidLessonAction as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
         except LLMError as exc:
-            raise self.wrap_llm_error_as_http_error(exc)
+            raise self._llm_error(exc)
         self.db.commit()
         return TurnResult(tutor_message=reply, phase=session.phase)
 
+    # ---- phase advance (TEACHING→PRE_PRACTICE_EXAMPLE, PRACTICE_SUMMARY→SUMMARY, SUMMARY→COMPLETED) ----
+
     def move_lesson_to_next_phase(self, session_id: int) -> PhaseResult:
-        session = self.get_owned_session_or_raise_404(session_id)
-        ctx = self.build_lesson_context_for_session(session)
+        session = self._get_session(session_id)
+        ctx = self._build_ctx(session)
         try:
             next_state = ctx.state.get_next_phase_state(ctx)
             ctx.move_to_next_phase_of_the_conversation(next_state.phase)
@@ -98,77 +113,195 @@ class TutorService:
         except InvalidLessonAction as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
         except LLMError as exc:
-            raise self.wrap_llm_error_as_http_error(exc)
+            raise self._llm_error(exc)
         self.db.commit()
         return PhaseResult(phase=session.phase, tutor_message=content)
 
-    def begin_assessment_and_generate_questions(
-        self, session_id: int
-    ) -> list[QuestionDTO]:
-        session = self.get_owned_session_or_raise_404(session_id)
-        ctx = self.build_lesson_context_for_session(session)
+    # ---- practice: start (PRE_PRACTICE_EXAMPLE → PRACTICE + set 1) ----
 
-        if session.phase == LessonPhase.EXAMPLE.value:
-            ctx.move_to_next_phase_of_the_conversation(LessonPhase.ASSESSMENT)
-            ctx.state.generate_phase_opening_message(ctx)
-
-        if not isinstance(ctx.state, AssessmentState):
+    def start_practice(self, session_id: int) -> PracticeStartResult:
+        session = self._get_session(session_id)
+        if session.phase not in (
+            LessonPhase.PRE_PRACTICE_EXAMPLE.value,
+            LessonPhase.PRACTICE.value,  # idempotent if already started
+        ):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                "The assessment is not available in this phase.",
+                "Practice can only be started from the pre-practice example phase.",
             )
+        ctx = self._build_ctx(session)
+
+        # Transition to PRACTICE if not there yet
+        if session.phase == LessonPhase.PRE_PRACTICE_EXAMPLE.value:
+            ctx.move_to_next_phase_of_the_conversation(LessonPhase.PRACTICE)
+            ctx.state.generate_phase_opening_message(ctx)
+
+        if not isinstance(ctx.state, PracticeState):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Practice is not active.")
 
         try:
-            questions = ctx.state.generate_assessment_questions(ctx)
+            questions = ctx.state.generate_practice_set(ctx, set_number=1)
         except LLMError as exc:
-            raise self.wrap_llm_error_as_http_error(exc)
-        self.db.commit()
-        return [QuestionDTO.model_validate(q) for q in questions]
+            raise self._llm_error(exc)
 
-    def submit_and_grade_assessment_answer(
-        self, session_id: int, question_id: int, answer: str
-    ) -> GradedAnswerDTO:
-        session = self.get_owned_session_or_raise_404(session_id)
-        ctx = self.build_lesson_context_for_session(session)
-        if not isinstance(ctx.state, AssessmentState):
-            raise HTTPException(
-                status.HTTP_409_CONFLICT, "No assessment is in progress."
-            )
-        try:
-            graded, remaining = ctx.state.grade_and_save_student_answer(
-                ctx, question_id, answer
-            )
-        except InvalidLessonAction as exc:
-            raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
-        except LLMError as exc:
-            raise self.wrap_llm_error_as_http_error(exc)
         self.db.commit()
-        return GradedAnswerDTO(
-            question_id=question_id,
-            is_correct=graded.is_correct,
-            feedback=graded.feedback,
-            remaining=remaining,
+        return PracticeStartResult(
+            set_number=1,
+            questions=[PracticeQuestionDTO.model_validate(q) for q in questions],
         )
 
-    def get_or_generate_session_summary(self, session_id: int) -> SessionSummary:
-        session = self.get_owned_session_or_raise_404(session_id)
-        ctx = self.build_lesson_context_for_session(session)
+    # ---- practice: submit answers for the current set ----
+
+    def submit_practice_set(
+        self, session_id: int, body: PracticeAnswersSubmit
+    ) -> PracticeSubmitResult:
+        session = self._get_session(session_id)
+        self._require_practice_phase(session)
+        ctx = self._build_ctx(session)
+
+        if not isinstance(ctx.state, PracticeState):
+            raise HTTPException(status.HTTP_409_CONFLICT, "No practice in progress.")
+
+        answers = {item.question_id: item.answer for item in body.answers}
+        if not answers:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No answers submitted.")
+
+        # Determine which set these answers belong to (by question IDs)
+        first_qid = next(iter(answers))
+        first_q = ctx.questions.get(first_qid)
+        if first_q is None or first_q.session_id != session.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Question not found in this session.")
+        set_number = first_q.set_number
+
+        try:
+            results = ctx.state.grade_and_save_set_answers(ctx, set_number, answers)
+        except LLMError as exc:
+            raise self._llm_error(exc)
+
+        self.db.commit()
+
+        grades = [
+            GradedPracticeItem(
+                question_id=q.id,
+                question_text=q.question_text,
+                difficulty=q.difficulty,
+                set_number=q.set_number,
+                student_answer=q.student_answer or "",
+                is_correct=bool(q.is_correct),
+                feedback=q.feedback or "",
+                correct_answer=q.correct_answer,
+                solution_steps=q.solution_steps,
+                explanation=q.explanation,
+            )
+            for q, _ in results
+        ]
+        return PracticeSubmitResult(set_number=set_number, grades=grades)
+
+    # ---- practice: generate next set ----
+
+    def next_practice_set(self, session_id: int) -> PracticeStartResult:
+        session = self._get_session(session_id)
+        self._require_practice_phase(session)
+        ctx = self._build_ctx(session)
+
+        if not isinstance(ctx.state, PracticeState):
+            raise HTTPException(status.HTTP_409_CONFLICT, "No practice in progress.")
+
+        current_max = ctx.questions.get_latest_set_number(session_id)
+        next_set = current_max + 1
+
+        try:
+            questions = ctx.state.generate_practice_set(ctx, set_number=next_set)
+        except LLMError as exc:
+            raise self._llm_error(exc)
+
+        self.db.commit()
+        return PracticeStartResult(
+            set_number=next_set,
+            questions=[PracticeQuestionDTO.model_validate(q) for q in questions],
+        )
+
+    # ---- practice: finish → PRACTICE_SUMMARY ----
+
+    def finish_practice(self, session_id: int) -> PhaseResult:
+        session = self._get_session(session_id)
+        self._require_practice_phase(session)
+        ctx = self._build_ctx(session)
+
+        if not isinstance(ctx.state, PracticeState):
+            raise HTTPException(status.HTTP_409_CONFLICT, "No practice in progress.")
+
+        # Save aggregated performance before moving to summary
+        ctx.state.finalize_practice_and_record_performance(ctx)
+
+        ctx.move_to_next_phase_of_the_conversation(LessonPhase.PRACTICE_SUMMARY)
+        self.db.commit()
+        return PhaseResult(phase=LessonPhase.PRACTICE_SUMMARY.value)
+
+    # ---- practice summary data ----
+
+    def get_practice_summary(self, session_id: int) -> PracticeSummaryDTO:
+        session = self._get_session(session_id)
+        ctx = self._build_ctx(session)
+        perf = ctx.performances.get_specific_session_performance(session_id)
+
+        all_questions = ctx.questions.get_specific_session_questions(session_id)
+
+        # Group by set_number
+        sets_map: dict[int, list] = {}
+        for q in all_questions:
+            sn = q.set_number or 1
+            sets_map.setdefault(sn, []).append(q)
+
+        sets = [
+            PracticeSetResult(
+                set_number=sn,
+                questions=[
+                    GradedPracticeItem(
+                        question_id=q.id,
+                        question_text=q.question_text,
+                        difficulty=q.difficulty,
+                        set_number=q.set_number,
+                        student_answer=q.student_answer or "",
+                        is_correct=bool(q.is_correct) if q.is_correct is not None else False,
+                        feedback=q.feedback or "",
+                        correct_answer=q.correct_answer,
+                        solution_steps=q.solution_steps,
+                        explanation=q.explanation,
+                    )
+                    for q in sorted(qs, key=lambda x: x.difficulty)
+                ],
+            )
+            for sn, qs in sorted(sets_map.items())
+        ]
+
+        total_correct = perf.score if perf else sum(1 for q in all_questions if q.is_correct)
+        total_questions = perf.total_questions if perf else len(all_questions)
+
+        return PracticeSummaryDTO(
+            session_id=session_id,
+            total_correct=total_correct,
+            total_questions=total_questions,
+            success_level=perf.success_level if perf else None,
+            sets=sets,
+        )
+
+    # ---- final lesson summary (for summary page after the lesson) ----
+
+    def get_or_generate_final_summary_text(self, session_id: int) -> str | None:
+        session = self._get_session(session_id)
+        ctx = self._build_ctx(session)
         perf = ctx.performances.get_specific_session_performance(session_id)
 
         if perf and not perf.summary_text:
             try:
-                perf.summary_text = self.llm.summarize_session(
-                    ctx.build_tutor_context()
+                perf.summary_text = self.llm.generate_lesson_summary(
+                    ctx.build_tutor_context(),
+                    perf.score,
+                    perf.total_questions,
                 )
                 self.db.commit()
             except LLMError:
-                self.db.rollback()  # summary is best-effort
+                self.db.rollback()
 
-        questions = ctx.questions.get_specific_session_questions(session_id)
-        return SessionSummary(
-            session_id=session_id,
-            success_level=perf.success_level if perf else None,
-            score=perf.score if perf else None,
-            summary_text=perf.summary_text if perf else None,
-            questions=[QuestionResultDTO.model_validate(q) for q in questions],
-        )
+        return perf.summary_text if perf else None
