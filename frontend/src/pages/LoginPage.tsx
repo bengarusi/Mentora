@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { clearSessionExpired, getSessionExpired } from "../api/client";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -8,7 +9,15 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (getSessionExpired()) {
+      setExpired(true);
+      clearSessionExpired();
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,6 +38,9 @@ export function LoginPage() {
       <form className="card form" onSubmit={handleSubmit}>
         <h1>Mentora</h1>
         <h2>Log in</h2>
+        {expired && (
+          <p className="notice">Your session expired. Please log in again.</p>
+        )}
         {error && <p className="error">{error}</p>}
         <label>
           Email

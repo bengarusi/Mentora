@@ -81,6 +81,16 @@ textarea {
   padding: 1.5rem 1rem 3rem;
 }
 
+/* Lesson page gets a wider, screen-height layout */
+.container.lesson {
+  max-width: 1050px;
+  padding: 1rem 1.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -118,6 +128,79 @@ textarea {
   color: var(--red);
   font-size: 0.9rem;
 }
+.notice {
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+/* ---- new-lesson start screen ---- */
+.new-lesson-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: var(--bg);
+}
+.new-lesson-form {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2.5rem 2.75rem;
+  width: 540px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  box-shadow: 0 4px 24px rgba(79, 70, 229, 0.08);
+}
+.new-lesson-brand {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.new-lesson-title {
+  font-size: 1.65rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+.new-lesson-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.new-lesson-label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  gap: 0.35rem;
+}
+.new-lesson-label input,
+.new-lesson-label select,
+.new-lesson-label textarea {
+  margin-top: 0;
+  font-size: 1rem;
+  padding: 0.65rem 0.75rem;
+}
+.new-lesson-label textarea {
+  min-height: 90px;
+}
+.new-lesson-submit {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 10px;
+}
 
 /* top bar */
 .topbar {
@@ -148,23 +231,28 @@ textarea {
 .lesson-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .chat-window {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 1rem;
-  height: 50vh;
+  padding: 1rem 1.25rem;
+  flex: 1;
+  min-height: 0;   /* required for flex children to shrink */
   overflow-y: auto;
-  margin: 1rem 0;
+  margin: 0.75rem 0;
 }
 .bubble {
-  margin-bottom: 0.75rem;
-  max-width: 80%;
-  padding: 0.6rem 0.85rem;
-  border-radius: 12px;
+  margin-bottom: 0.85rem;
+  max-width: 78%;
+  padding: 0.65rem 1rem;
+  border-radius: 14px;
+  line-height: 1.5;
 }
 .bubble-tutor {
   background: #eef2ff;
@@ -178,20 +266,47 @@ textarea {
   text-transform: uppercase;
   color: var(--muted);
 }
-.bubble p {
-  margin: 0.2rem 0 0;
-  white-space: pre-wrap;
+.bubble-content p,
+.bubble-content li,
+.bubble-content ol,
+.bubble-content ul {
+  margin: 0.25rem 0;
+  line-height: 1.55;
 }
+.bubble-content > *:first-child { margin-top: 0.2rem; }
+.bubble-content > *:last-child  { margin-bottom: 0; }
+.bubble-content ul,
+.bubble-content ol {
+  padding-left: 1.3rem;
+}
+.bubble-content strong { font-weight: 700; }
+
+.example-content p,
+.example-content li,
+.example-content ol,
+.example-content ul {
+  margin: 0.3rem 0;
+  line-height: 1.6;
+}
+.example-content > *:first-child { margin-top: 0; }
+.example-content > *:last-child  { margin-bottom: 0; }
+.example-content ul,
+.example-content ol {
+  padding-left: 1.4rem;
+}
+.example-content strong { font-weight: 700; }
 
 .turn-form {
   display: flex;
   gap: 0.5rem;
+  flex-shrink: 0;
 }
 .lesson-actions {
   display: flex;
   gap: 0.75rem;
-  margin-top: 1rem;
+  margin-top: 0.75rem;
   align-items: center;
+  flex-shrink: 0;
 }
 
 /* badges */
@@ -232,6 +347,37 @@ textarea {
 }
 .feedback-wrong {
   color: var(--red);
+}
+
+/* solution panel — shown when student expands an incorrect answer */
+.solution-panel {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #f8f9fe;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.solution-panel p {
+  margin: 0.3rem 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* pre-formatted solution steps — preserve newlines but wrap long lines */
+.solution-steps {
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  white-space: pre-wrap;      /* wrap at container width */
+  word-break: break-word;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  max-width: 100%;
+  margin: 0.4rem 0 0;
+  background: transparent;
 }
 
 /* progress */

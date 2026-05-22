@@ -289,19 +289,36 @@ class TutorService:
     # ---- final lesson summary (for summary page after the lesson) ----
 
     def get_or_generate_final_summary_text(self, session_id: int) -> str | None:
+        """
+        Return the lesson summary text for the summary page.
+
+        Priority:
+          1. Performance.summary_text already set (saved by SummaryState).
+          2. Lazy-generate from LLM if the session is in SUMMARY or COMPLETED phase
+             and no text was stored yet (e.g. legacy sessions).
+        """
         session = self._get_session(session_id)
         ctx = self._build_ctx(session)
         perf = ctx.performances.get_specific_session_performance(session_id)
 
-        if perf and not perf.summary_text:
+        if perf is None:
+            return None
+
+        if perf.summary_text:
+            return perf.summary_text
+
+        # Legacy / fallback: generate on demand if phase allows
+        if session.phase in (LessonPhase.SUMMARY.value, LessonPhase.COMPLETED.value):
             try:
-                perf.summary_text = self.llm.generate_lesson_summary(
+                text = self.llm.generate_lesson_summary(
                     ctx.build_tutor_context(),
                     perf.score,
                     perf.total_questions,
                 )
+                perf.summary_text = text
                 self.db.commit()
+                return text
             except LLMError:
                 self.db.rollback()
 
-        return perf.summary_text if perf else None
+        return None

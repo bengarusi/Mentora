@@ -9,6 +9,7 @@ class RecentSessionDTO(BaseModel):
     phase: str
     success_level: str | None = None
     score: int | None = None
+    total_questions: int | None = None
 
 
 class StudentProgressResponse(BaseModel):
@@ -16,5 +17,8 @@ class StudentProgressResponse(BaseModel):
     completed_sessions: int
     sessions_by_subject: dict[str, int]
     success_distribution: dict[str, int]
-    average_score: float | None = None
+    # Overall aggregates across all sessions
+    total_correct_answered: int = 0
+    total_questions_answered: int = 0
+    average_percentage: float | None = None  # 0–100, replaces the old "avg score / 3"
     recent: list[RecentSessionDTO] = []

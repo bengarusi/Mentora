@@ -39,15 +39,24 @@ export function LessonPage() {
     }
   }
 
-  async function handleAdvance(thenSummary = false) {
+  async function handleLetsPractice() {
     setBusy(true);
     try {
-      await advancePhase(id);
-      if (thenSummary) {
-        navigate(`/lesson/${id}/summary`);
-      } else {
-        await reload();
-      }
+      const result = await advancePhase(id);
+      // Result phase will be "pre_practice_example"; pass the generated example via nav state
+      navigate(`/lesson/${id}/pre-practice`, {
+        state: { exampleContent: result.tutor_message },
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleFinishLesson() {
+    setBusy(true);
+    try {
+      await advancePhase(id);  // SUMMARY → COMPLETED
+      navigate(`/lesson/${id}/summary`);
     } finally {
       setBusy(false);
     }
@@ -58,11 +67,7 @@ export function LessonPage() {
   }
 
   const phase = session.phase;
-  const canChat =
-    phase === "explanation" ||
-    phase === "example" ||
-    phase === "correction" ||
-    phase === "level_adjustment";
+  const canChat = phase === "teaching" || phase === "summary";
 
   return (
     <div className="container lesson">
@@ -93,34 +98,28 @@ export function LessonPage() {
       )}
 
       <div className="lesson-actions">
-        {phase === "explanation" && (
-          <button onClick={() => handleAdvance()} disabled={busy}>
-            Continue to example
+        {phase === "teaching" && (
+          <button
+            className="btn-primary"
+            onClick={handleLetsPractice}
+            disabled={busy}
+          >
+            Let's Practice
           </button>
         )}
-        {phase === "example" && (
-          <button onClick={() => navigate(`/lesson/${id}/assessment`)} disabled={busy}>
-            Start assessment
-          </button>
-        )}
-        {phase === "assessment" && (
-          <button onClick={() => navigate(`/lesson/${id}/assessment`)}>
-            Go to assessment
-          </button>
-        )}
-        {phase === "correction" && (
-          <button onClick={() => handleAdvance()} disabled={busy}>
-            Continue
-          </button>
-        )}
-        {phase === "level_adjustment" && (
-          <button onClick={() => handleAdvance(true)} disabled={busy}>
-            Finish lesson
+        {phase === "summary" && (
+          <button onClick={handleFinishLesson} disabled={busy}>
+            Finish Lesson
           </button>
         )}
         {phase === "completed" && (
           <button onClick={() => navigate(`/lesson/${id}/summary`)}>
-            View summary
+            View Summary
+          </button>
+        )}
+        {phase === "practice_summary" && (
+          <button onClick={() => navigate(`/lesson/${id}/practice/summary`)}>
+            View Practice Results
           </button>
         )}
       </div>

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from app.api.dependencies import get_tutor_service
 from app.schemas.practice import (
@@ -9,6 +10,11 @@ from app.schemas.practice import (
 )
 from app.schemas.tutor import PhaseResult, TurnRequest, TurnResult
 from app.services.tutor_service import TutorService
+
+
+class LessonSummaryResponse(BaseModel):
+    session_id: int
+    summary_text: str | None
 
 router = APIRouter(prefix="/tutor", tags=["tutor"])
 
@@ -86,3 +92,13 @@ def get_practice_summary(
 ):
     """Return all practice questions with grading results, grouped by set."""
     return tutor.get_practice_summary(session_id)
+
+
+@router.get("/{session_id}/lesson-summary", response_model=LessonSummaryResponse)
+def get_lesson_summary(
+    session_id: int,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """Return the final lesson summary text for the summary page."""
+    text = tutor.get_or_generate_final_summary_text(session_id)
+    return LessonSummaryResponse(session_id=session_id, summary_text=text)

@@ -1,11 +1,11 @@
 export type Subject = "math" | "english";
 
 export type LessonPhase =
-  | "explanation"
-  | "example"
-  | "assessment"
-  | "correction"
-  | "level_adjustment"
+  | "teaching"
+  | "pre_practice_example"
+  | "practice"
+  | "practice_summary"
+  | "summary"
   | "completed";
 
 export interface Student {
@@ -54,35 +54,62 @@ export interface PhaseResult {
   tutor_message: string | null;
 }
 
-export interface Question {
+// ---- Practice types ----
+
+export interface PracticeQuestion {
   id: number;
   difficulty: number;
   question_text: string;
+  set_number: number;
 }
 
-export interface GradedAnswer {
+export interface PracticeAnswerItem {
   question_id: number;
+  answer: string;
+}
+
+export interface GradedPracticeItem {
+  question_id: number;
+  question_text: string;
+  difficulty: number;
+  set_number: number;
+  student_answer: string;
   is_correct: boolean;
   feedback: string;
-  remaining: number;
+  correct_answer: string | null;
+  solution_steps: string | null;
+  explanation: string | null;
 }
 
-export interface QuestionResult {
-  id: number;
-  difficulty: number;
-  question_text: string;
-  student_answer: string | null;
-  is_correct: boolean | null;
-  feedback: string | null;
+export interface PracticeStartResult {
+  set_number: number;
+  questions: PracticeQuestion[];
 }
 
-export interface SessionSummary {
+export interface PracticeSubmitResult {
+  set_number: number;
+  grades: GradedPracticeItem[];
+}
+
+export interface PracticeSetResult {
+  set_number: number;
+  questions: GradedPracticeItem[];
+}
+
+export interface PracticeSummary {
   session_id: number;
+  total_correct: number;
+  total_questions: number;
   success_level: string | null;
-  score: number | null;
-  summary_text: string | null;
-  questions: QuestionResult[];
+  sets: PracticeSetResult[];
 }
+
+export interface LessonSummaryResponse {
+  session_id: number;
+  summary_text: string | null;
+}
+
+// ---- Progress / legacy types ----
 
 export interface RecentSession {
   session_id: number;
@@ -92,6 +119,7 @@ export interface RecentSession {
   phase: string;
   success_level: string | null;
   score: number | null;
+  total_questions: number | null;
 }
 
 export interface StudentProgress {
@@ -99,6 +127,8 @@ export interface StudentProgress {
   completed_sessions: number;
   sessions_by_subject: Record<string, number>;
   success_distribution: Record<string, number>;
-  average_score: number | null;
+  total_correct_answered: number;
+  total_questions_answered: number;
+  average_percentage: number | null;
   recent: RecentSession[];
 }
