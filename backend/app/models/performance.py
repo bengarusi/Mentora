@@ -19,9 +19,11 @@ class Performance(Base):
     session_id = Column(
         Integer, ForeignKey("lesson_sessions.id"), unique=True, nullable=False
     )
-    success_level = Column(String, nullable=False)  # SuccessLevel enum value
-    score = Column(Integer, nullable=False)  # number of correct answers (0..3)
-    summary_text = Column(Text, nullable=True)  # AI session summary
+    success_level = Column(String, nullable=False)   # SuccessLevel enum value
+    score = Column(Integer, nullable=False)           # total correct answers across all sets
+    total_questions = Column(Integer, nullable=False, default=3)  # total questions across all sets
+    practice_sets = Column(Integer, nullable=False, default=1)    # how many practice sets completed
+    summary_text = Column(Text, nullable=True)        # AI final lesson summary
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     session = relationship("LessonSession", back_populates="performance")
