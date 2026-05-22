@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.dependencies import get_tutor_service
@@ -30,6 +31,23 @@ def send_student_message_and_get_tutor_reply(
     tutor: TutorService = Depends(get_tutor_service),
 ):
     return tutor.send_student_message_and_get_tutor_reply(session_id, body.content)
+
+
+@router.post("/{session_id}/turn/stream")
+def stream_student_message_and_get_tutor_reply(
+    session_id: int,
+    body: TurnRequest,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """Stream the tutor's reply token-by-token as plain text chunks."""
+    generator = tutor.stream_student_message_and_get_tutor_reply(
+        session_id, body.content
+    )
+    return StreamingResponse(
+        generator,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------------------------------------------------------------------

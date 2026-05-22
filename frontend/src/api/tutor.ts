@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, getToken } from "./client";
 import type {
   LessonSummaryResponse,
   PhaseResult,
@@ -18,6 +18,35 @@ export async function sendTurn(
     { content }
   );
   return data;
+}
+
+// Stream the tutor reply token-by-token. Uses fetch (not axios) because axios
+// can't expose a readable stream in the browser. onToken fires for each chunk.
+export async function streamTurn(
+  sessionId: number,
+  content: string,
+  onToken: (delta: string) => void
+): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`/api/tutor/${sessionId}/turn/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream failed: ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    if (chunk) onToken(chunk);
+  }
 }
 
 export async function advancePhase(sessionId: number): Promise<PhaseResult> {

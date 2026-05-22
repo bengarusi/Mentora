@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -38,6 +39,12 @@ class LLMProvider(ABC):
     @abstractmethod
     def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
         """Respond to one student message during the teaching or summary phase."""
+
+    @abstractmethod
+    def chat_reply_stream(
+        self, ctx: TutorContext, student_message: str
+    ) -> Iterator[str]:
+        """Stream the reply for one student message as text deltas."""
 
     @abstractmethod
     def generate_pre_practice_example(self, ctx: TutorContext) -> str:

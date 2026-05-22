@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from app.core.enums import LessonPhase, SuccessLevel
@@ -152,6 +153,12 @@ class PracticeState(LessonState):
                     )
                 )
             )
+        log.info(
+            "generated practice set session_id=%s set_number=%d count=%d",
+            ctx.session.id,
+            set_number,
+            len(rows),
+        )
         return rows
 
     def grade_and_save_set_answers(
@@ -160,54 +167,91 @@ class PracticeState(LessonState):
         set_number: int,
         answers: dict[int, str],  # {question_id: student_answer}
     ) -> list[tuple[AssessmentQuestion, GradedAnswer]]:
-        """Grade every submitted answer for one set. Returns (question, grade) pairs."""
+        """Grade every submitted answer for one set. Returns (question, grade) pairs.
+
+        Correctness comes from the deterministic math tool whenever it can decide,
+        so correct answers need NO LLM call (instant). The LLM is only used to
+        explain *wrong* answers (and as a full fallback when the tool abstains),
+        and those calls run concurrently so a whole set costs ~one round-trip."""
         questions = ctx.questions.get_practice_set_questions(ctx.session.id, set_number)
-        results: list[tuple[AssessmentQuestion, GradedAnswer]] = []
+
+        # Phase 1: deterministic pass. Decide is_correct and which questions still
+        # need an LLM call for prose feedback.
+        decided: dict[int, GradedAnswer] = {}  # question_id -> grade (no LLM needed)
+        needs_llm: list[tuple[AssessmentQuestion, str, str, ToolResult | None]] = []
 
         for q in questions:
             raw_answer = answers.get(q.id)
             if raw_answer is None:
                 continue
             criteria = q.correct_answer or q.criteria or ""
-
-            # 1. Deterministic validation (source of truth for is_correct)
             tool_result = _math_router.validate_student_answer(
                 q.question_text, criteria, raw_answer
             )
 
-            if tool_result.is_equivalent is not None:
-                # Tool gave a definitive answer — use it; ask LLM only for feedback.
-                # Pass tool_result so the prompt locks is_correct and prevents the
-                # LLM from generating feedback that contradicts the tool's verdict.
-                is_correct = tool_result.is_equivalent
-                llm_grade = ctx.llm.grade_answer(
-                    q.question_text, criteria, raw_answer, tool_result=tool_result
+            if tool_result.warnings:
+                log.warning(
+                    "Math tool warnings for question %d: %s", q.id, tool_result.warnings
                 )
-                graded = GradedAnswer(
-                    is_correct=is_correct,
-                    feedback=llm_grade.feedback,
+
+            if tool_result.is_equivalent is True:
+                # Correct — skip the LLM entirely, use instant templated praise.
+                decided[q.id] = GradedAnswer(
+                    is_correct=True, feedback=_correct_feedback()
                 )
-                if tool_result.warnings:
-                    log.warning(
-                        "Math tool warnings for question %d: %s",
-                        q.id,
-                        tool_result.warnings,
-                    )
+            elif tool_result.is_equivalent is False:
+                # Wrong but definitive — LLM explains why (is_correct stays False).
+                needs_llm.append((q, criteria, raw_answer, tool_result))
             else:
-                # Tool could not determine — fall back to LLM for both fields
+                # Tool abstained — LLM owns both fields (full fallback).
                 log.info(
                     "Math tool could not validate question %d (%s); using LLM fallback.",
                     q.id,
                     tool_result.tool_used,
                 )
-                graded = ctx.llm.grade_answer(q.question_text, criteria, raw_answer)
+                needs_llm.append((q, criteria, raw_answer, None))
 
-            q.student_answer = raw_answer
+        # Phase 2: run the remaining LLM feedback calls concurrently.
+        llm_grades: dict[int, GradedAnswer] = {}
+        if needs_llm:
+
+            def _grade(item):
+                q, criteria, raw_answer, tool_result = item
+                grade = ctx.llm.grade_answer(
+                    q.question_text, criteria, raw_answer, tool_result=tool_result
+                )
+                if tool_result is not None:
+                    # Tool is the source of truth for is_correct on definitive verdicts.
+                    grade = GradedAnswer(
+                        is_correct=tool_result.is_equivalent, feedback=grade.feedback
+                    )
+                return q.id, grade
+
+            with ThreadPoolExecutor(max_workers=len(needs_llm)) as pool:
+                for qid, grade in pool.map(_grade, needs_llm):
+                    llm_grades[qid] = grade
+
+        # Phase 3: persist results in the original question order.
+        results: list[tuple[AssessmentQuestion, GradedAnswer]] = []
+        for q in questions:
+            if q.id not in answers:
+                continue
+            graded = decided.get(q.id) or llm_grades[q.id]
+            q.student_answer = answers[q.id]
             q.is_correct = graded.is_correct
             q.feedback = graded.feedback
             results.append((q, graded))
 
         ctx.db.flush()
+        correct = sum(1 for _, g in results if g.is_correct)
+        log.info(
+            "graded set session_id=%s set_number=%d correct=%d total=%d llm_calls=%d",
+            ctx.session.id,
+            set_number,
+            correct,
+            len(results),
+            len(needs_llm),
+        )
         return results
 
     def finalize_practice_and_record_performance(
@@ -238,6 +282,14 @@ class PracticeState(LessonState):
             perf.total_questions = total_questions
             perf.practice_sets = latest_set
             ctx.db.flush()
+        log.info(
+            "performance recorded session_id=%s score=%d/%d level=%s sets=%d",
+            ctx.session.id,
+            total_correct,
+            total_questions,
+            level.value,
+            latest_set,
+        )
         return perf
 
     @staticmethod
@@ -319,6 +371,11 @@ class CompletedState(LessonState):
 # ---------------------------------------------------------------------------
 # Math-tool helpers used by PracticeState and _ConversationalState
 # ---------------------------------------------------------------------------
+
+def _correct_feedback() -> str:
+    """Templated praise for a correct answer — used instead of an LLM call."""
+    return "Correct! Nice work."
+
 
 def _annotate_math(text: str) -> str:
     """If the student's message is a parseable number/fraction, append its

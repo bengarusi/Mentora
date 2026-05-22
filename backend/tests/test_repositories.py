@@ -18,7 +18,7 @@ def _make_session(db, student_id, subject="math"):
         topic="Topic",
         goal_text="Goal",
         status=SessionStatus.ACTIVE.value,
-        phase=LessonPhase.EXPLANATION.value,
+        phase=LessonPhase.TEACHING.value,
     )
     db.add(session)
     db.commit()

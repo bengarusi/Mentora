@@ -1,15 +1,38 @@
+import { lazy, Suspense } from "react";
 import { Link, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
-import { NewLessonPage } from "./pages/NewLessonPage";
-import { LessonPage } from "./pages/LessonPage";
-import { PrePracticeExamplePage } from "./pages/PrePracticeExamplePage";
-import { PracticePage } from "./pages/PracticePage";
-import { PracticeSummaryPage } from "./pages/PracticeSummaryPage";
-import { SummaryPage } from "./pages/SummaryPage";
-import { ProgressPage } from "./pages/ProgressPage";
+
+// Lazy-loaded so the heavy markdown/KaTeX bundle (pulled in by the lesson and
+// practice pages) is split out and only fetched when one of these routes opens,
+// keeping the initial/login bundle light.
+const NewLessonPage = lazy(() =>
+  import("./pages/NewLessonPage").then((m) => ({ default: m.NewLessonPage }))
+);
+const LessonPage = lazy(() =>
+  import("./pages/LessonPage").then((m) => ({ default: m.LessonPage }))
+);
+const PrePracticeExamplePage = lazy(() =>
+  import("./pages/PrePracticeExamplePage").then((m) => ({
+    default: m.PrePracticeExamplePage,
+  }))
+);
+const PracticePage = lazy(() =>
+  import("./pages/PracticePage").then((m) => ({ default: m.PracticePage }))
+);
+const PracticeSummaryPage = lazy(() =>
+  import("./pages/PracticeSummaryPage").then((m) => ({
+    default: m.PracticeSummaryPage,
+  }))
+);
+const SummaryPage = lazy(() =>
+  import("./pages/SummaryPage").then((m) => ({ default: m.SummaryPage }))
+);
+const ProgressPage = lazy(() =>
+  import("./pages/ProgressPage").then((m) => ({ default: m.ProgressPage }))
+);
 
 function AppLayout() {
   const { student, logout } = useAuth();
@@ -31,7 +54,9 @@ function AppLayout() {
         </div>
       </header>
       <main>
-        <Outlet />
+        <Suspense fallback={<div className="container">Loading…</div>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

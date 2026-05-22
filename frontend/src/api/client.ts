@@ -12,7 +12,7 @@ export const getSessionExpired = () =>
 export const clearSessionExpired = () =>
   sessionStorage.removeItem(SESSION_EXPIRED_KEY);
 
-export const apiClient = axios.create({ baseURL: "/api" });
+export const apiClient = axios.create({ baseURL: "/api", timeout: 30000 });
 
 apiClient.interceptors.request.use((config) => {
   const token = getToken();

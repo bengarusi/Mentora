@@ -10,7 +10,9 @@ class LessonSession(Base):
     __tablename__ = "lesson_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(
+        Integer, ForeignKey("students.id"), nullable=False, index=True
+    )
     subject = Column(String, nullable=False)  # math or english
     topic = Column(String, nullable=False)
     goal_text = Column(String, nullable=False)

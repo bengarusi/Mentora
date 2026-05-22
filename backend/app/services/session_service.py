@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
@@ -5,6 +7,8 @@ from sqlalchemy.sql import func
 from app.core.enums import SessionStatus
 from app.models.session import LessonSession
 from app.repositories.session_repo import SessionRepository
+
+log = logging.getLogger("app.services.session_service")
 
 
 def get_owned_session_or_404(
@@ -24,4 +28,7 @@ def end_session(db: Session, student_id: int, session_id: int) -> LessonSession:
     session.ended_at = func.now()
     db.commit()
     db.refresh(session)
+    log.info(
+        "session ended session_id=%s student_id=%s", session_id, student_id
+    )
     return session

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getLessonSummary, getPracticeSummary } from "../api/tutor";
+import { RichText } from "../components/RichText";
 import type { PracticeSummary } from "../types";
 
 export function SummaryPage() {
@@ -31,7 +32,9 @@ export function SummaryPage() {
 
       {summaryMessage && (
         <div className="card">
-          <p>{summaryMessage}</p>
+          <div className="bubble-content">
+            <RichText content={summaryMessage} />
+          </div>
         </div>
       )}
 

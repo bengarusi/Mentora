@@ -1,8 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.logging import LoggingMiddleware, setup_logging
 from app.db.database import Base, engine
 from app.api import sessionController as session
 from app.api import authController as auth
@@ -16,6 +18,12 @@ from app.models import (  # noqa
     AssessmentQuestion,
     Performance,
 )
+
+setup_logging()
+logging.getLogger("app.main").info(
+    "application startup service=mentora-api status=up"
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,7 +39,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+
+# Registered AFTER CORS so it is the outermost middleware: it logs every request
+# (including CORS preflight OPTIONS) and times the full request, while CORS runs
+# inside it and still adds its Access-Control-* headers.
+app.add_middleware(LoggingMiddleware)
 
 app.include_router(auth.router)
 app.include_router(session.router)

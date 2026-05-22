@@ -207,27 +207,29 @@ def practice_questions_prompt(ctx: TutorContext, set_number: int) -> tuple[str, 
         "Return ONLY valid JSON. No markdown. No extra text.\n\n"
 
         "JSON format:\n"
+        "solution_steps must be a markdown numbered list with each step on its own line, "
+        "separated by \\n. Use **bold** to highlight the final answer step.\n\n"
         "{\n"
         '  "questions": [\n'
         '    {\n'
         '      "difficulty": 1,\n'
         '      "question": "...",\n'
         '      "correct_answer": "...",\n'
-        '      "solution_steps": "Step 1: ... Step 2: ... Answer: ...",\n'
+        '      "solution_steps": "1. First step explanation\\n2. Second step explanation\\n3. **Answer: final result**",\n'
         '      "explanation": "short explanation of the method used"\n'
         "    },\n"
         '    {\n'
         '      "difficulty": 2,\n'
         '      "question": "...",\n'
         '      "correct_answer": "...",\n'
-        '      "solution_steps": "Step 1: ... Step 2: ... Answer: ...",\n'
+        '      "solution_steps": "1. First step explanation\\n2. Second step explanation\\n3. **Answer: final result**",\n'
         '      "explanation": "short explanation of the method used"\n'
         "    },\n"
         '    {\n'
         '      "difficulty": 3,\n'
         '      "question": "...",\n'
         '      "correct_answer": "...",\n'
-        '      "solution_steps": "Step 1: ... Step 2: ... Answer: ...",\n'
+        '      "solution_steps": "1. First step explanation\\n2. Second step explanation\\n3. **Answer: final result**",\n'
         '      "explanation": "short explanation of the method used"\n'
         "    }\n"
         "  ]\n"

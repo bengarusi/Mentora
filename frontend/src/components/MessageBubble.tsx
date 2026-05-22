@@ -1,14 +1,23 @@
+import { memo } from "react";
 import { RichText } from "./RichText";
 import type { Message } from "../types";
 
-export function MessageBubble({ message }: { message: Message }) {
+export const MessageBubble = memo(function MessageBubble({
+  message,
+}: {
+  message: Message;
+}) {
   const isTutor = message.role === "tutor";
   return (
     <div className={`bubble ${isTutor ? "bubble-tutor" : "bubble-student"}`}>
       <span className="bubble-role">{isTutor ? "Tutor" : "You"}</span>
       <div className="bubble-content">
-        <RichText content={message.content} />
+        {message.content === "" ? (
+          <span className="typing-cursor">▍</span>
+        ) : (
+          <RichText content={message.content} />
+        )}
       </div>
     </div>
   );
-}
+});

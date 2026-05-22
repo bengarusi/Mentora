@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getMessages, getSession } from "../api/sessions";
-import { advancePhase, sendTurn } from "../api/tutor";
+import { advancePhase, streamTurn } from "../api/tutor";
 import { ChatWindow } from "../components/ChatWindow";
 import { PhaseBadge } from "../components/PhaseBadge";
 import type { Message, Session } from "../types";
@@ -28,11 +28,32 @@ export function LessonPage() {
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!draft.trim()) return;
+    const text = draft.trim();
+    if (!text) return;
     setBusy(true);
+
+    // Optimistically show the student's message and an empty tutor bubble that
+    // fills in as tokens stream. Temporary negative ids avoid clashing with
+    // real DB ids; we never refetch on success.
+    const studentId = -Date.now();
+    const tutorId = studentId - 1;
+    setMessages((prev) => [
+      ...prev,
+      { id: studentId, session_id: id, role: "student", content: text, created_at: null },
+      { id: tutorId, session_id: id, role: "tutor", content: "", created_at: null },
+    ]);
+    setDraft("");
+
     try {
-      await sendTurn(id, draft.trim());
-      setDraft("");
+      await streamTurn(id, text, (delta) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tutorId ? { ...m, content: m.content + delta } : m
+          )
+        );
+      });
+    } catch {
+      // Recover canonical state if the stream fails.
       await reload();
     } finally {
       setBusy(false);

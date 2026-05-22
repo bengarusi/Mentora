@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { advancePhase, getPracticeSummary } from "../api/tutor";
+import { RichText } from "../components/RichText";
 import type { GradedPracticeItem, PracticeSummary } from "../types";
+
+// Convert legacy flat "Step 1: ... Step 2: ..." strings to markdown numbered list
+function normalizeSolutionSteps(steps: string): string {
+  if (!steps || steps.includes("\n")) return steps;
+  return steps
+    .replace(/Step\s+(\d+):\s*/g, "\n$1. ")
+    .trimStart();
+}
 
 export function PracticeSummaryPage() {
   const { sessionId } = useParams();
@@ -81,16 +90,18 @@ export function PracticeSummaryPage() {
                 </span>
               </div>
 
-              <p>{q.question_text}</p>
+              <div className="bubble-content">
+                <RichText content={q.question_text} />
+              </div>
 
               {q.student_answer && (
                 <p className="muted">Your answer: {q.student_answer}</p>
               )}
 
               {q.feedback && (
-                <p className={q.is_correct ? "feedback-correct" : "feedback-wrong"}>
-                  {q.feedback}
-                </p>
+                <div className={q.is_correct ? "feedback-correct" : "feedback-wrong"}>
+                  <RichText content={q.feedback} />
+                </div>
               )}
 
               {!q.is_correct && (
@@ -107,20 +118,22 @@ export function PracticeSummaryPage() {
               {expandedId === q.question_id && (
                 <div className="solution-panel">
                   {q.correct_answer && (
-                    <p>
-                      <strong>Correct answer:</strong> {q.correct_answer}
-                    </p>
+                    <div className="solution-row">
+                      <strong>Correct answer:</strong>
+                      <RichText content={q.correct_answer} />
+                    </div>
                   )}
                   {q.solution_steps && (
-                    <div>
+                    <div className="solution-row">
                       <strong>Solution steps:</strong>
-                      <pre className="solution-steps">{q.solution_steps}</pre>
+                      <RichText content={normalizeSolutionSteps(q.solution_steps)} />
                     </div>
                   )}
                   {q.explanation && (
-                    <p>
-                      <strong>What to remember:</strong> {q.explanation}
-                    </p>
+                    <div className="solution-row">
+                      <strong>What to remember:</strong>
+                      <RichText content={q.explanation} />
+                    </div>
                   )}
                 </div>
               )}

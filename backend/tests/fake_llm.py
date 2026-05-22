@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -21,6 +22,12 @@ class FakeLLMProvider(LLMProvider):
 
     def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
         return f"Reply to: {student_message}"
+
+    def chat_reply_stream(
+        self, ctx: TutorContext, student_message: str
+    ) -> Iterator[str]:
+        for word in self.chat_reply(ctx, student_message).split(" "):
+            yield word + " "
 
     def generate_pre_practice_example(self, ctx: TutorContext) -> str:
         return (

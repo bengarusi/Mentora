@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.core.enums import LessonPhase, MessageRole, Subject
@@ -8,6 +10,8 @@ from app.models.student import Student
 from app.repositories.assessment_repo import AssessmentRepository
 from app.repositories.message_repo import MessageRepository
 from app.repositories.performance_repo import PerformanceRepository
+
+log = logging.getLogger("app.lesson.context")
 
 _HISTORY_LIMIT = 10
 
@@ -39,8 +43,15 @@ class LessonContext:
     def move_to_next_phase_of_the_conversation(self, phase: LessonPhase) -> None:
         from app.lesson.state import state_for_phase
 
+        previous_phase = self.session.phase
         self.session.phase = phase.value
         self.state = state_for_phase(phase)
+        log.info(
+            "phase transition session_id=%s from=%s to=%s",
+            self.session.id,
+            previous_phase,
+            phase.value,
+        )
 
     def save_tutor_message_to_db(self, content: str) -> Message:
         return self.messages.add(
@@ -66,8 +77,10 @@ class LessonContext:
         else:
             level = self.student.english_level
 
-        history = self.messages.get_specific_session_messages_history(self.session.id)
-        recent = [(m.role, m.content) for m in history[-_HISTORY_LIMIT:]]
+        history = self.messages.get_recent_session_messages(
+            self.session.id, _HISTORY_LIMIT
+        )
+        recent = [(m.role, m.content) for m in history]
 
         return TutorContext(
             subject=self.session.subject,

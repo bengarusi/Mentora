@@ -13,6 +13,9 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    LOG_LEVEL: str = "INFO"
+    LOG_DIR: str | None = None  # None -> backend/logs/ (resolved in logging.config)
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

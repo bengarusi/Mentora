@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
@@ -11,7 +12,9 @@ function normalizeLatex(text: string): string {
     .replace(/\\\]/g, "$$");
 }
 
-export function RichText({ content }: { content: string }) {
+// Memoized: markdown + KaTeX parsing is expensive, so only re-parse when the
+// content string actually changes (not on every parent/list re-render).
+export const RichText = memo(function RichText({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkMath]}
@@ -20,4 +23,4 @@ export function RichText({ content }: { content: string }) {
       {normalizeLatex(content)}
     </ReactMarkdown>
   );
-}
+});

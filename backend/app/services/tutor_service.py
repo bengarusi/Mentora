@@ -1,9 +1,18 @@
+import logging
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from collections.abc import Iterator
+
 from app.core.enums import LessonPhase, SessionStatus
 from app.lesson.context import LessonContext
-from app.lesson.state import InvalidLessonAction, PracticeState
+from app.lesson.state import (
+    InvalidLessonAction,
+    PracticeState,
+    _ConversationalState,
+    _annotate_math,
+)
 from app.llm.provider import LLMError, LLMProvider
 from app.models.session import LessonSession
 from app.models.student import Student
@@ -19,6 +28,8 @@ from app.schemas.practice import (
 )
 from app.schemas.session import SessionCreate
 from app.schemas.tutor import PhaseResult, TurnResult
+
+log = logging.getLogger("app.services.tutor_service")
 
 
 class TutorService:
@@ -83,6 +94,14 @@ class TutorService:
             raise self._llm_error(exc)
         self.db.commit()
         self.db.refresh(session)
+        log.info(
+            "lesson created session_id=%s student_id=%s subject=%s topic=%s phase=%s",
+            session.id,
+            self.student.id,
+            session.subject,
+            session.topic,
+            session.phase,
+        )
         return session
 
     # ---- chat turn (TEACHING and SUMMARY phases) ----
@@ -100,6 +119,42 @@ class TutorService:
             raise self._llm_error(exc)
         self.db.commit()
         return TurnResult(tutor_message=reply, phase=session.phase)
+
+    # ---- streaming chat turn (token-by-token) ----
+
+    def stream_student_message_and_get_tutor_reply(
+        self, session_id: int, text: str
+    ) -> Iterator[str]:
+        """Stream the tutor's reply as text deltas.
+
+        Phase is validated up front (so a wrong phase becomes a clean 409 before
+        the stream starts). The student message is staged, the reply streamed,
+        and both messages committed atomically once the stream completes — so a
+        dropped stream leaves no orphaned student message."""
+        session = self._get_session(session_id)
+        ctx = self._build_ctx(session)
+        if not isinstance(ctx.state, _ConversationalState):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "You can only chat during the teaching or summary phase.",
+            )
+
+        ctx.save_student_message_to_db(text)
+        self.db.flush()  # visible to the history query below, not yet committed
+        tutor_ctx = ctx.build_tutor_context()
+        annotated = _annotate_math(text)
+
+        def generate() -> Iterator[str]:
+            chunks: list[str] = []
+            for delta in self.llm.chat_reply_stream(tutor_ctx, annotated):
+                chunks.append(delta)
+                yield delta
+            full = "".join(chunks).strip()
+            if full:
+                ctx.save_tutor_message_to_db(full)
+            self.db.commit()
+
+        return generate()
 
     # ---- phase advance (TEACHING→PRE_PRACTICE_EXAMPLE, PRACTICE_SUMMARY→SUMMARY, SUMMARY→COMPLETED) ----
 
