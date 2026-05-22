@@ -1,6 +1,13 @@
-backend/.env
-pycache/
+# Python
+__pycache__/
 *.pyc
+.venv/
 venv/
+
+# Env / secrets
 .env
+backend/.env
+
+# IDE
 .idea/
+.vscode/
