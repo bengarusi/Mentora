@@ -1,27 +1,40 @@
 from app.llm.provider import LLMProvider, TutorContext
-from app.schemas.tutor import GeneratedQuestion, GradedAnswer, LevelAdjustment
+from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
 
 
 class FakeLLMProvider(LLMProvider):
     """Deterministic in-memory provider for tests — no network, no cost.
-    grade_answer marks an answer correct when it equals the question's criteria,
-    so tests can drive an exact score."""
+    grade_answer marks an answer correct when it equals the question's correct_answer."""
 
-    def generate_explanation(self, ctx: TutorContext) -> str:
-        return f"Explanation about {ctx.topic}."
-
-    def generate_example(self, ctx: TutorContext) -> str:
-        return f"Example about {ctx.topic}."
+    def generate_teaching_intro(self, ctx: TutorContext) -> str:
+        return (
+            f"Today we'll learn about {ctx.topic}. "
+            f"Here is a quick example. Now, can you tell me: what is 1+1?"
+        )
 
     def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
         return f"Reply to: {student_message}"
 
-    def generate_questions(self, ctx: TutorContext) -> list[GeneratedQuestion]:
+    def generate_pre_practice_example(self, ctx: TutorContext) -> str:
+        return (
+            f"Example Question:\nSolve a sample {ctx.topic} problem.\n\n"
+            f"Solution:\nStep 1: Identify the problem.\nStep 2: Apply the method.\n\n"
+            f"Answer: sample-answer\n\n"
+            f"What to remember: Always follow the steps.\n\n"
+            f"Now you're ready to try similar questions yourself!"
+        )
+
+    def generate_practice_questions(
+        self, ctx: TutorContext, set_number: int
+    ) -> list[GeneratedPracticeQuestion]:
+        base = (set_number - 1) * 3
         return [
-            GeneratedQuestion(
+            GeneratedPracticeQuestion(
                 difficulty=i,
-                question=f"Question {i} about {ctx.topic}",
-                criteria=f"correct{i}",
+                question=f"Set {set_number} Q{i} about {ctx.topic}",
+                correct_answer=f"correct{base + i}",
+                solution_steps=f"Step 1: approach {i}. Answer: correct{base + i}.",
+                explanation=f"Method explanation for difficulty {i}.",
             )
             for i in (1, 2, 3)
         ]
@@ -35,8 +48,11 @@ class FakeLLMProvider(LLMProvider):
             feedback="Well done!" if is_correct else "Not quite, try again.",
         )
 
-    def adjust_level(self, ctx: TutorContext, score: int) -> LevelAdjustment:
-        return LevelAdjustment(direction="same", note=f"You scored {score}/3.")
-
-    def summarize_session(self, ctx: TutorContext) -> str:
-        return f"Summary of the lesson on {ctx.topic}."
+    def generate_lesson_summary(
+        self, ctx: TutorContext, total_correct: int, total_questions: int
+    ) -> str:
+        return (
+            f"You learned about {ctx.topic} today. "
+            f"You answered {total_correct} out of {total_questions} correctly. "
+            f"Keep up the great work!"
+        )

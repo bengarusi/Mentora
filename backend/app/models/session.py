@@ -15,7 +15,7 @@ class LessonSession(Base):
     topic = Column(String, nullable=False)
     goal_text = Column(String, nullable=False)
     status = Column(String, nullable=False, default=SessionStatus.ACTIVE.value)  # lifecycle
-    phase = Column(String, nullable=False, default=LessonPhase.EXPLANATION.value)  # pedagogical phase
+    phase = Column(String, nullable=False, default=LessonPhase.TEACHING.value)  # pedagogical phase
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
 

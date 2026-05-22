@@ -5,7 +5,7 @@ from openai import OpenAI
 from app.core.config import settings
 from app.llm import prompts
 from app.llm.provider import LLMError, LLMProvider, TutorContext
-from app.schemas.tutor import GeneratedQuestion, GradedAnswer, LevelAdjustment
+from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
 
 
 class OpenAIProvider(LLMProvider):
@@ -17,7 +17,7 @@ class OpenAIProvider(LLMProvider):
 
     def _call_llm(self, system: str, user: str, json_mode: bool = False) -> str:
         try:
-            kwargs = {
+            kwargs: dict = {
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system},
@@ -30,28 +30,30 @@ class OpenAIProvider(LLMProvider):
             return response.choices[0].message.content or ""
         except LLMError:
             raise
-        except Exception as exc:  # network, auth, rate limit, etc.
+        except Exception as exc:
             raise LLMError(str(exc)) from exc
 
-    def generate_explanation(self, ctx: TutorContext) -> str:
-        return self._call_llm(*prompts.explanation_prompt(ctx)).strip()
-
-    def generate_example(self, ctx: TutorContext) -> str:
-        return self._call_llm(*prompts.example_prompt(ctx)).strip()
+    def generate_teaching_intro(self, ctx: TutorContext) -> str:
+        return self._call_llm(*prompts.teaching_intro_prompt(ctx)).strip()
 
     def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
         return self._call_llm(*prompts.chat_prompt(ctx, student_message)).strip()
 
-    def generate_questions(self, ctx: TutorContext) -> list[GeneratedQuestion]:
-        system, user = prompts.questions_prompt(ctx)
+    def generate_pre_practice_example(self, ctx: TutorContext) -> str:
+        return self._call_llm(*prompts.pre_practice_example_prompt(ctx)).strip()
+
+    def generate_practice_questions(
+        self, ctx: TutorContext, set_number: int
+    ) -> list[GeneratedPracticeQuestion]:
+        system, user = prompts.practice_questions_prompt(ctx, set_number)
         raw = self._call_llm(system, user, json_mode=True)
         try:
             data = json.loads(raw)
-            questions = [GeneratedQuestion(**q) for q in data["questions"]]
+            questions = [GeneratedPracticeQuestion(**q) for q in data["questions"]]
         except Exception as exc:
-            raise LLMError(f"Could not parse questions JSON: {exc}") from exc
+            raise LLMError(f"Could not parse practice questions JSON: {exc}") from exc
         if len(questions) != 3:
-            raise LLMError(f"Expected 3 questions, got {len(questions)}")
+            raise LLMError(f"Expected 3 practice questions, got {len(questions)}")
         questions.sort(key=lambda q: q.difficulty)
         return questions
 
@@ -61,17 +63,17 @@ class OpenAIProvider(LLMProvider):
         system, user = prompts.grade_prompt(question_text, criteria, answer)
         raw = self._call_llm(system, user, json_mode=True)
         try:
-            return GradedAnswer(**json.loads(raw))
+            data = json.loads(raw)
+            return GradedAnswer(
+                is_correct=data["is_correct"],
+                feedback=data["feedback"],
+            )
         except Exception as exc:
             raise LLMError(f"Could not parse grade JSON: {exc}") from exc
 
-    def adjust_level(self, ctx: TutorContext, score: int) -> LevelAdjustment:
-        system, user = prompts.adjust_prompt(ctx, score)
-        raw = self._call_llm(system, user, json_mode=True)
-        try:
-            return LevelAdjustment(**json.loads(raw))
-        except Exception as exc:
-            raise LLMError(f"Could not parse adjustment JSON: {exc}") from exc
-
-    def summarize_session(self, ctx: TutorContext) -> str:
-        return self._call_llm(*prompts.summary_prompt(ctx)).strip()
+    def generate_lesson_summary(
+        self, ctx: TutorContext, total_correct: int, total_questions: int
+    ) -> str:
+        return self._call_llm(
+            *prompts.lesson_summary_prompt(ctx, total_correct, total_questions)
+        ).strip()
