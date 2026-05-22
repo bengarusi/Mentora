@@ -1,31 +1,27 @@
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
+
+from app.core.enums import SessionStatus
 from app.models.session import LessonSession
-from app.schemas.session import SessionCreate
+from app.repositories.session_repo import SessionRepository
 
-def create_session(db: Session, data: SessionCreate):
-    session = LessonSession(
-        student_id=data.student_id,
-        subject=data.subject,
-        topic=data.topic,
-        goal_text=data.goal_text,
-        status="active"
-    )
 
-    db.add(session)
-    db.commit()
-    db.refresh(session)
-
+def get_owned_session_or_404(
+    db: Session, student_id: int, session_id: int
+) -> LessonSession:
+    session = SessionRepository(db).get_specific_session(session_id, student_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
     return session
-def end_session(db: Session, session_id: int):
-    session = db.query(LessonSession).filter(LessonSession.id == session_id).first()
 
-    if not session:
-        return None
 
-    session.status = "ended"
+def end_session(db: Session, student_id: int, session_id: int) -> LessonSession:
+    session = get_owned_session_or_404(db, student_id, session_id)
+    session.status = SessionStatus.ENDED.value
     session.ended_at = func.now()
-
     db.commit()
     db.refresh(session)
-
     return session
