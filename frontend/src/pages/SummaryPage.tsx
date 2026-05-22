@@ -1,52 +1,54 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getSummary } from "../api/tutor";
-import { ScoreBadge } from "../components/ScoreBadge";
-import type { SessionSummary } from "../types";
+import { getLessonSummary, getPracticeSummary } from "../api/tutor";
+import type { PracticeSummary } from "../types";
 
 export function SummaryPage() {
   const { sessionId } = useParams();
   const id = Number(sessionId);
-  const [summary, setSummary] = useState<SessionSummary | null>(null);
+
+  const [summary, setSummary] = useState<PracticeSummary | null>(null);
+  const [summaryMessage, setSummaryMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    getSummary(id).then(setSummary);
+    getPracticeSummary(id).then(setSummary).catch(() => null);
+    // Use the dedicated endpoint so we always get the lesson summary text,
+    // not whatever happens to be the last message in the DB.
+    getLessonSummary(id)
+      .then((r) => setSummaryMessage(r.summary_text))
+      .catch(() => null);
   }, [id]);
 
-  if (!summary) {
-    return <div className="container">Loading summary…</div>;
-  }
+  const levelLabel: Record<string, string> = {
+    achieved: "Excellent",
+    partially: "Good effort",
+    not_achieved: "Keep practicing",
+  };
 
   return (
     <div className="container">
-      <h2>Lesson summary</h2>
-      <div className="card">
-        <div className="summary-head">
-          <ScoreBadge level={summary.success_level} />
-          {summary.score !== null && (
-            <span className="muted">Score: {summary.score} / 3</span>
-          )}
-        </div>
-        {summary.summary_text && <p>{summary.summary_text}</p>}
-      </div>
+      <h2>Lesson Complete</h2>
 
-      <h3>Questions</h3>
-      {summary.questions.map((q) => (
-        <div key={q.id} className="card">
-          <p>
-            <strong>Q{q.difficulty}:</strong> {q.question_text}
-          </p>
-          {q.student_answer && (
-            <p className="muted">Your answer: {q.student_answer}</p>
-          )}
-          {q.is_correct !== null && (
-            <p className={q.is_correct ? "feedback-correct" : "feedback-wrong"}>
-              {q.is_correct ? "Correct" : "Incorrect"}
-              {q.feedback ? ` — ${q.feedback}` : ""}
-            </p>
-          )}
+      {summaryMessage && (
+        <div className="card">
+          <p>{summaryMessage}</p>
         </div>
-      ))}
+      )}
+
+      {summary && (
+        <div className="card summary-head">
+          <div>
+            <strong>
+              Practice score: {summary.total_correct} / {summary.total_questions}
+            </strong>
+            {summary.success_level && (
+              <span className="muted" style={{ marginLeft: "1rem" }}>
+                {levelLabel[summary.success_level] ?? summary.success_level}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="lesson-actions">
         <Link to="/progress">View progress</Link>

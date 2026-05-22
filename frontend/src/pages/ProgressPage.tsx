@@ -15,6 +15,8 @@ export function ProgressPage() {
     return <div className="container">Loading progress…</div>;
   }
 
+  const hasQuestions = progress.total_questions_answered > 0;
+
   return (
     <div className="container">
       <h2>My progress</h2>
@@ -30,13 +32,24 @@ export function ProgressPage() {
         </div>
         <div className="card stat">
           <span className="stat-value">
-            {progress.average_score !== null
-              ? progress.average_score.toFixed(1)
+            {hasQuestions
+              ? `${progress.average_percentage?.toFixed(1)}%`
               : "—"}
           </span>
-          <span className="muted">Avg score / 3</span>
+          <span className="muted">Avg score</span>
         </div>
       </div>
+
+      {hasQuestions && (
+        <div className="card">
+          <p>
+            <strong>
+              {progress.total_correct_answered} / {progress.total_questions_answered}
+            </strong>{" "}
+            <span className="muted">questions correct across all lessons</span>
+          </p>
+        </div>
+      )}
 
       <h3>Outcomes</h3>
       <div className="card">
@@ -57,6 +70,11 @@ export function ProgressPage() {
               {s.subject} — {s.topic}
             </strong>
             <p className="muted">{s.goal_text}</p>
+            {s.score !== null && s.total_questions !== null && (
+              <p className="muted">
+                {s.score} / {s.total_questions} correct
+              </p>
+            )}
           </div>
           <div className="recent-meta">
             <ScoreBadge level={s.success_level} />

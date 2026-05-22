@@ -5,7 +5,9 @@ import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { NewLessonPage } from "./pages/NewLessonPage";
 import { LessonPage } from "./pages/LessonPage";
-import { AssessmentPage } from "./pages/AssessmentPage";
+import { PrePracticeExamplePage } from "./pages/PrePracticeExamplePage";
+import { PracticePage } from "./pages/PracticePage";
+import { PracticeSummaryPage } from "./pages/PracticeSummaryPage";
 import { SummaryPage } from "./pages/SummaryPage";
 import { ProgressPage } from "./pages/ProgressPage";
 
@@ -51,7 +53,15 @@ export default function App() {
         <Route path="/new" element={<NewLessonPage />} />
         <Route path="/progress" element={<ProgressPage />} />
         <Route path="/lesson/:sessionId" element={<LessonPage />} />
-        <Route path="/lesson/:sessionId/assessment" element={<AssessmentPage />} />
+        <Route
+          path="/lesson/:sessionId/pre-practice"
+          element={<PrePracticeExamplePage />}
+        />
+        <Route path="/lesson/:sessionId/practice" element={<PracticePage />} />
+        <Route
+          path="/lesson/:sessionId/practice/summary"
+          element={<PracticeSummaryPage />}
+        />
         <Route path="/lesson/:sessionId/summary" element={<SummaryPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

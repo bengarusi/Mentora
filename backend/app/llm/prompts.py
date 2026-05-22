@@ -61,10 +61,15 @@ def teaching_intro_prompt(ctx: TutorContext) -> tuple[str, str]:
         "- End by asking the student one small question about what was just explained.\n"
         "- Do NOT say 'Let's Practice' immediately — only suggest it after several correct answers.\n\n"
 
-        "Required structure:\n"
-        "1. Short explanation (3-4 sentences)\n"
-        "2. Worked example (step by step)\n"
-        "3. One small question for the student\n\n"
+        "Required structure — use Markdown formatting:\n"
+        "1. Short explanation (3-4 sentences, use **bold** for key terms)\n"
+        "2. **Example:** header followed by numbered steps\n"
+        "3. One small question for the student (on its own line)\n\n"
+
+        "Formatting rules:\n"
+        "- Use **bold** for key math terms and answers.\n"
+        "- Use numbered lists for worked example steps.\n"
+        "- Use a blank line between each section.\n\n"
 
         "Write the teaching introduction now."
     )
@@ -82,22 +87,26 @@ def chat_prompt(ctx: TutorContext, student_message: str) -> tuple[str, str]:
         "You are in the TEACHING phase (ongoing conversation).\n\n"
 
         "Your job:\n"
-        "- Respond helpfully and briefly to the student's message.\n"
+        "- Respond helpfully to the student's message.\n"
         "- If the student answered a question correctly, celebrate it briefly and ask another small question.\n"
         "- If the student answered incorrectly, give one gentle hint and ask again.\n"
-        "- Keep track (in the conversation context) of how many correct answers the student has given.\n"
         "- Once you estimate the student has answered about 4-5 questions correctly total,\n"
         "  add an encouraging suggestion at the end of your reply:\n"
-        "  'You're doing great — you seem ready to practice! Click the \"Let\\'s Practice\" button when you feel ready.'\n\n"
+        "  'You're doing great — you seem ready to practice! Click the **Let's Practice** button when you feel ready.'\n\n"
 
         "Important math rules:\n"
-        "- Check every calculation carefully before responding.\n"
-        "- Accept equivalent answers (e.g., 4/16 = 1/4 = 2/8).\n"
-        "- Do not mark correct answers as wrong.\n\n"
+        "- If the student message contains a note like '[= 1/2]', that is the simplified form of their answer.\n"
+        "  Use that simplified value to judge correctness — do NOT treat it as wrong just because they wrote an unsimplified form.\n"
+        "- Accept ALL mathematically equivalent answers: 2/4, 1/2, 4/8, 0.5 are all the same.\n"
+        "- Never say an equivalent answer is 'close' — if it equals the correct value, it IS correct.\n"
+        "- Check every calculation carefully before responding.\n\n"
 
-        "Response style:\n"
-        "- Maximum 5 short sentences.\n"
-        "- Be encouraging but precise.\n\n"
+        "Formatting rules — use Markdown in every response:\n"
+        "- Use **bold** to highlight key terms, correct answers, and important steps.\n"
+        "- Use numbered lists (1. 2. 3.) for step-by-step explanations.\n"
+        "- Use bullet points (-) for hints, tips, or multiple ideas.\n"
+        "- Use a blank line between paragraphs for readability.\n"
+        "- Keep responses concise but well-structured.\n\n"
 
         "Now respond to the student."
     )

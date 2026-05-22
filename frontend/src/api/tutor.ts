@@ -1,9 +1,11 @@
 import { apiClient } from "./client";
 import type {
-  GradedAnswer,
+  LessonSummaryResponse,
   PhaseResult,
-  Question,
-  SessionSummary,
+  PracticeAnswerItem,
+  PracticeStartResult,
+  PracticeSubmitResult,
+  PracticeSummary,
   TurnResult,
 } from "../types";
 
@@ -25,28 +27,58 @@ export async function advancePhase(sessionId: number): Promise<PhaseResult> {
   return data;
 }
 
-export async function startAssessment(sessionId: number): Promise<Question[]> {
-  const { data } = await apiClient.post<Question[]>(
-    `/tutor/${sessionId}/assessment/start`
+// ---- Practice flow ----
+
+export async function startPractice(
+  sessionId: number
+): Promise<PracticeStartResult> {
+  const { data } = await apiClient.post<PracticeStartResult>(
+    `/tutor/${sessionId}/practice/start`
   );
   return data;
 }
 
-export async function submitAnswer(
+export async function submitPracticeSet(
   sessionId: number,
-  questionId: number,
-  answer: string
-): Promise<GradedAnswer> {
-  const { data } = await apiClient.post<GradedAnswer>(
-    `/tutor/${sessionId}/assessment/answer`,
-    { question_id: questionId, answer }
+  answers: PracticeAnswerItem[]
+): Promise<PracticeSubmitResult> {
+  const { data } = await apiClient.post<PracticeSubmitResult>(
+    `/tutor/${sessionId}/practice/submit`,
+    { answers }
   );
   return data;
 }
 
-export async function getSummary(sessionId: number): Promise<SessionSummary> {
-  const { data } = await apiClient.get<SessionSummary>(
-    `/tutor/${sessionId}/summary`
+export async function nextPracticeSet(
+  sessionId: number
+): Promise<PracticeStartResult> {
+  const { data } = await apiClient.post<PracticeStartResult>(
+    `/tutor/${sessionId}/practice/next`
+  );
+  return data;
+}
+
+export async function finishPractice(sessionId: number): Promise<PhaseResult> {
+  const { data } = await apiClient.post<PhaseResult>(
+    `/tutor/${sessionId}/practice/finish`
+  );
+  return data;
+}
+
+export async function getPracticeSummary(
+  sessionId: number
+): Promise<PracticeSummary> {
+  const { data } = await apiClient.get<PracticeSummary>(
+    `/tutor/${sessionId}/practice/summary`
+  );
+  return data;
+}
+
+export async function getLessonSummary(
+  sessionId: number
+): Promise<LessonSummaryResponse> {
+  const { data } = await apiClient.get<LessonSummaryResponse>(
+    `/tutor/${sessionId}/lesson-summary`
   );
   return data;
 }

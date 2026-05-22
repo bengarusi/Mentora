@@ -16,11 +16,7 @@ export function NewLessonPage() {
     setError(null);
     setBusy(true);
     try {
-      const session = await createSession({
-        subject,
-        topic,
-        goal_text: goal,
-      });
+      const session = await createSession({ subject, topic, goal_text: goal });
       navigate(`/lesson/${session.id}`);
     } catch {
       setError("Could not start the lesson. Please try again.");
@@ -30,11 +26,17 @@ export function NewLessonPage() {
   }
 
   return (
-    <div className="container">
-      <form className="card form" onSubmit={handleSubmit}>
-        <h2>Start a new lesson</h2>
+    <div className="new-lesson-page">
+      <form className="new-lesson-form" onSubmit={handleSubmit}>
+        <div className="new-lesson-brand">Mentora</div>
+        <h2 className="new-lesson-title">Start a new lesson</h2>
+        <p className="new-lesson-subtitle">
+          Tell the tutor what you want to learn today.
+        </p>
+
         {error && <p className="error">{error}</p>}
-        <label>
+
+        <label className="new-lesson-label">
           Subject
           <select
             value={subject}
@@ -44,26 +46,29 @@ export function NewLessonPage() {
             <option value="english">English</option>
           </select>
         </label>
-        <label>
+
+        <label className="new-lesson-label">
           Topic
           <input
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g. Fractions"
+            placeholder="e.g. Adding fractions"
             required
           />
         </label>
-        <label>
-          Goal for this lesson
+
+        <label className="new-lesson-label">
+          What do you want to learn?
           <textarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
-            placeholder="e.g. I want to be able to add fractions"
+            placeholder="e.g. I want to be able to add fractions with different denominators"
             required
           />
         </label>
-        <button type="submit" disabled={busy}>
-          {busy ? "Starting…" : "Start lesson"}
+
+        <button className="new-lesson-submit" type="submit" disabled={busy}>
+          {busy ? "Starting lesson…" : "Start lesson"}
         </button>
       </form>
     </div>
