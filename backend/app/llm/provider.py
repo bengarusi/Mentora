@@ -1,5 +1,11 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.math.schemas import ToolResult
 
 from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
 
@@ -45,9 +51,18 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def grade_answer(
-        self, question_text: str, criteria: str, answer: str
+        self,
+        question_text: str,
+        criteria: str,
+        answer: str,
+        *,
+        tool_result: "ToolResult | None" = None,
     ) -> GradedAnswer:
-        """Grade one student answer and return is_correct + short feedback."""
+        """Grade one student answer and return is_correct + short feedback.
+
+        When *tool_result* carries a definitive is_equivalent verdict, the LLM
+        must use that verdict for is_correct and only generate aligned feedback.
+        """
 
     @abstractmethod
     def generate_lesson_summary(

@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.math.schemas import ToolResult
+
 from app.llm.provider import TutorContext
 
 
@@ -235,7 +242,71 @@ def practice_questions_prompt(ctx: TutorContext, set_number: int) -> tuple[str, 
 # Answer grading (reused per-question inside submit-set)
 # ---------------------------------------------------------------------------
 
-def grade_prompt(question_text: str, criteria: str, answer: str) -> tuple[str, str]:
+def grade_prompt(
+    question_text: str,
+    criteria: str,
+    answer: str,
+    *,
+    tool_result: "ToolResult | None" = None,
+) -> tuple[str, str]:
+    """Build system+user prompt for answer grading.
+
+    When *tool_result* carries a definitive is_equivalent verdict, the prompt
+    locks is_correct to that value and instructs the LLM to only write feedback
+    that is consistent with it.  When tool_result is absent or inconclusive the
+    LLM decides both is_correct and feedback (original fallback behaviour).
+    """
+    if tool_result is not None and tool_result.is_equivalent is not None:
+        # Definitive tool verdict — LLM must not re-grade; only write feedback.
+        is_correct_str = "true" if tool_result.is_equivalent else "false"
+        normalized = tool_result.canonical_answer or answer
+
+        if tool_result.is_equivalent:
+            behavior_rule = (
+                "The answer IS correct. "
+                "Write a short, warm celebration (1 sentence, 10 words max). "
+                "You MUST NOT use any of these phrases or anything similar: "
+                "'almost right', 'not quite', 'good try', 'close', 'let's check again', "
+                "'but', 'however', or any wording that implies the answer might be wrong."
+            )
+        else:
+            behavior_rule = (
+                "The answer is NOT the final correct answer. "
+                "Write one kind, encouraging sentence (10 words max) that guides the student. "
+                "If the student's answer looks like a valid intermediate step "
+                "(for example, just the numerator without the denominator), "
+                "acknowledge that step and ask for the next part."
+            )
+
+        system = (
+            "You are a kind math tutor assistant for a child.\n\n"
+            "A deterministic math validator has already graded this answer.\n"
+            "You MUST follow this result exactly. Do NOT re-grade the answer yourself.\n"
+            "You MUST NOT contradict the validation result.\n\n"
+            "VALIDATION_RESULT:\n"
+            f"  is_correct: {is_correct_str}\n"
+            f"  expected_answer: {criteria}\n"
+            f"  normalized_student_answer: {normalized}\n\n"
+            f"Your job: {behavior_rule}\n\n"
+            "Use short, kind, age-appropriate language.\n"
+            "Return ONLY valid JSON."
+        )
+
+        user = (
+            f"Question:\n{question_text}\n\n"
+            f"Student answer:\n{answer}\n\n"
+            "Return ONLY valid JSON in this exact format:\n"
+            "{\n"
+            f'  "is_correct": {is_correct_str},\n'
+            '  "feedback": "short, kind feedback for the student"\n'
+            "}\n\n"
+            f"IMPORTANT: is_correct MUST be {is_correct_str}. "
+            "Follow the VALIDATION_RESULT exactly. Do not contradict it."
+        )
+
+        return system, user
+
+    # --- Fallback: tool could not determine — LLM decides both fields ---
     system = (
         "You are a strict but kind math grader for a child's tutoring session.\n\n"
 

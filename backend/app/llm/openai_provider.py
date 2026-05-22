@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import json
+from typing import TYPE_CHECKING
 
 from openai import OpenAI
 
@@ -6,6 +9,9 @@ from app.core.config import settings
 from app.llm import prompts
 from app.llm.provider import LLMError, LLMProvider, TutorContext
 from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
+
+if TYPE_CHECKING:
+    from app.math.schemas import ToolResult
 
 
 class OpenAIProvider(LLMProvider):
@@ -58,9 +64,16 @@ class OpenAIProvider(LLMProvider):
         return questions
 
     def grade_answer(
-        self, question_text: str, criteria: str, answer: str
+        self,
+        question_text: str,
+        criteria: str,
+        answer: str,
+        *,
+        tool_result: "ToolResult | None" = None,
     ) -> GradedAnswer:
-        system, user = prompts.grade_prompt(question_text, criteria, answer)
+        system, user = prompts.grade_prompt(
+            question_text, criteria, answer, tool_result=tool_result
+        )
         raw = self._call_llm(system, user, json_mode=True)
         try:
             data = json.loads(raw)

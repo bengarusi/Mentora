@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.math.schemas import ToolResult
+
 from app.llm.provider import LLMProvider, TutorContext
 from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
 
@@ -40,8 +47,21 @@ class FakeLLMProvider(LLMProvider):
         ]
 
     def grade_answer(
-        self, question_text: str, criteria: str, answer: str
+        self,
+        question_text: str,
+        criteria: str,
+        answer: str,
+        *,
+        tool_result: "ToolResult | None" = None,
     ) -> GradedAnswer:
+        # If the deterministic tool gave a verdict, honour it exactly.
+        if tool_result is not None and tool_result.is_equivalent is not None:
+            is_correct = tool_result.is_equivalent
+            return GradedAnswer(
+                is_correct=is_correct,
+                feedback="Correct! Great job!" if is_correct else "Not quite, try again.",
+            )
+        # Fallback: simple string comparison (no real LLM in tests).
         is_correct = answer.strip().lower() == criteria.strip().lower()
         return GradedAnswer(
             is_correct=is_correct,

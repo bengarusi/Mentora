@@ -176,9 +176,13 @@ class PracticeState(LessonState):
             )
 
             if tool_result.is_equivalent is not None:
-                # Tool gave a definitive answer — use it; ask LLM only for feedback
+                # Tool gave a definitive answer — use it; ask LLM only for feedback.
+                # Pass tool_result so the prompt locks is_correct and prevents the
+                # LLM from generating feedback that contradicts the tool's verdict.
                 is_correct = tool_result.is_equivalent
-                llm_grade = ctx.llm.grade_answer(q.question_text, criteria, raw_answer)
+                llm_grade = ctx.llm.grade_answer(
+                    q.question_text, criteria, raw_answer, tool_result=tool_result
+                )
                 graded = GradedAnswer(
                     is_correct=is_correct,
                     feedback=llm_grade.feedback,
