@@ -8,6 +8,9 @@ venv/
 .env
 backend/.env
 
+# Zip archives (may contain secrets)
+*.zip
+
 # IDE
 .idea/
 .vscode/
