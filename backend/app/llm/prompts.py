@@ -23,6 +23,9 @@ def _persona(ctx: TutorContext) -> str:
         f"- Lesson goal: {ctx.goal_text}"
         f"{level}\n\n"
 
+        "LANGUAGE: Always respond in English only. "
+        "Never switch to another language, even if the student writes or speaks in a different language.\n\n"
+
         "Core teaching rules:\n"
         "1. Use very simple, age-appropriate language.\n"
         "2. Keep answers short, clear, and focused.\n"
@@ -151,8 +154,11 @@ def chat_prompt(
 
         "Formatting rules — use Markdown in every response:\n"
         "- Use **bold** to highlight key terms, correct answers, and important steps.\n"
-        "- Use numbered lists (1. 2. 3.) for step-by-step explanations.\n"
-        "- Use bullet points (-) for hints, tips, or multiple ideas.\n"
+        "- Write confirmations and follow-up questions as plain prose — 1 to 3 sentences, NO numbered list.\n"
+        "  Example of correct style: 'Great job! 4 × 2 = **8** is correct. Let's try another: **5 × 3 = ?**'\n"
+        "  NOT: '1. Great job! ... 2. Let's try ...'\n"
+        "- Only use a numbered list when walking through a multi-step worked example.\n"
+        "- Use bullet points (-) for hints or multiple tips.\n"
         "- Use a blank line between paragraphs for readability.\n"
         "- Keep responses concise but well-structured.\n\n"
 

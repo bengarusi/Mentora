@@ -30,6 +30,9 @@ class OpenAIProvider(LLMProvider):
         )
         self.model = settings.OPENAI_MODEL
 
+    def _is_reasoning_model(self) -> bool:
+        return "gpt-5" in (self.model or "")
+
     def _call_llm(
         self,
         system: str,
@@ -53,8 +56,14 @@ class OpenAIProvider(LLMProvider):
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
             if max_tokens is not None:
-                kwargs["max_tokens"] = max_tokens
-            if temperature is not None:
+                if self._is_reasoning_model():
+                    # gpt-5 uses max_completion_tokens (not max_tokens), and that
+                    # budget covers internal reasoning tokens too — add a 1500-token
+                    # buffer so reasoning doesn't consume the entire allowance.
+                    kwargs["max_completion_tokens"] = max_tokens + 1500
+                else:
+                    kwargs["max_tokens"] = max_tokens
+            if temperature is not None and not self._is_reasoning_model():
                 kwargs["temperature"] = temperature
             response = self.client.chat.completions.create(**kwargs)
             content = response.choices[0].message.content or ""
@@ -115,14 +124,18 @@ class OpenAIProvider(LLMProvider):
         start = time.perf_counter()
         log.info("llm stream start op=chat_reply_stream model=%s", self.model)
         try:
+            token_kwarg = (
+                {"max_completion_tokens": 400 + 1500}
+                if self._is_reasoning_model()
+                else {"max_tokens": 400, "temperature": 0.6}
+            )
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                max_tokens=400,
-                temperature=0.6,
+                **token_kwarg,
                 stream=True,
             )
             for chunk in stream:

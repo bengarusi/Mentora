@@ -8,8 +8,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_MODEL: str = "gpt-5.4-mini"   # main tutor brain
     LLM_PROVIDER: str = "openai"
+
+    # Voice I/O models — kept separate so the tutor brain can evolve
+    # independently of speech-to-text / text-to-speech.
+    # Override any of these in backend/.env without touching service code.
+    OPENAI_STT_MODEL: str = "gpt-4o-transcribe"
+    OPENAI_TTS_MODEL: str = "gpt-4o-mini-tts"
+    OPENAI_TTS_VOICE: str = "alloy"
 
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 

@@ -9,6 +9,7 @@ from app.llm.provider import LLMProvider
 from app.models.student import Student
 from app.repositories.student_repo import StudentRepository
 from app.services.tutor_service import TutorService
+from app.services.voice_service import VoiceService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -43,3 +44,8 @@ def get_tutor_service(
     llm: LLMProvider = Depends(get_llm),
 ) -> TutorService:
     return TutorService(db, llm, student)
+
+
+def get_voice_service() -> VoiceService:
+    """Dependency seam for the audio I/O layer — tests can override this."""
+    return VoiceService()

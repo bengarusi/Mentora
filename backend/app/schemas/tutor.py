@@ -38,3 +38,22 @@ class TurnResult(BaseModel):
 class PhaseResult(BaseModel):
     phase: str
     tutor_message: str | None = None
+
+
+class TtsRequest(BaseModel):
+    text: str
+
+
+class TtsResult(BaseModel):
+    audio_base64: str | None = None
+
+
+class VoiceTurnResult(BaseModel):
+    """Result of a voice turn: the transcribed student speech, the tutor's text
+    reply (produced by the unchanged tutor flow), the resulting phase, and an
+    optional base64-encoded mp3 of the tutor reply spoken aloud."""
+
+    student_text: str
+    tutor_message: str
+    phase: str
+    audio_base64: str | None = None

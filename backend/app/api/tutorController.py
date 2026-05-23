@@ -1,16 +1,21 @@
-from fastapi import APIRouter, Depends
+import logging
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.dependencies import get_tutor_service
+from app.api.dependencies import get_tutor_service, get_voice_service
 from app.schemas.practice import (
     PracticeAnswersSubmit,
     PracticeStartResult,
     PracticeSubmitResult,
     PracticeSummaryDTO,
 )
-from app.schemas.tutor import PhaseResult, TurnRequest, TurnResult
+from app.schemas.tutor import PhaseResult, TtsRequest, TtsResult, TurnRequest, TurnResult, VoiceTurnResult
 from app.services.tutor_service import TutorService
+from app.services.voice_service import VoiceService, VoiceServiceError
+
+log = logging.getLogger("app.api.tutorController")
 
 
 class LessonSummaryResponse(BaseModel):
@@ -47,6 +52,91 @@ def stream_student_message_and_get_tutor_reply(
         generator,
         media_type="text/plain; charset=utf-8",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# TTS: convert any tutor text reply to speech (used by the typed-chat flow
+# so the student hears every tutor message, not just voice-turn replies)
+# ---------------------------------------------------------------------------
+
+@router.post("/{session_id}/tts", response_model=TtsResult)
+def speak_text(
+    session_id: int,
+    body: TtsRequest,
+    tutor: TutorService = Depends(get_tutor_service),
+    voice: VoiceService = Depends(get_voice_service),
+):
+    """Synthesize speech for an arbitrary tutor text. Session ownership is
+    validated so the endpoint can't be used as a free anonymous TTS service."""
+    tutor._get_session(session_id)  # raises 404 if the student doesn't own this session
+    if not body.text.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Text is empty.")
+    try:
+        audio_base64 = voice.synthesize_speech(body.text)
+    except VoiceServiceError:
+        log.warning("tts failed in /tts endpoint for session_id=%s", session_id)
+        return TtsResult(audio_base64=None)
+    return TtsResult(audio_base64=audio_base64)
+
+
+# ---------------------------------------------------------------------------
+# Voice turn: speech-in → existing tutor flow → speech-out
+# ---------------------------------------------------------------------------
+
+@router.post("/{session_id}/voice-turn", response_model=VoiceTurnResult)
+async def voice_turn(
+    session_id: int,
+    file: UploadFile = File(...),
+    tutor: TutorService = Depends(get_tutor_service),
+    voice: VoiceService = Depends(get_voice_service),
+):
+    """Thin voice I/O wrapper: transcribe the uploaded audio, run the EXISTING
+    non-streaming tutor turn on the transcript, then speak the tutor reply.
+
+    The tutor brain is untouched here — this only adds speech-to-text on the way
+    in and text-to-speech on the way out."""
+    if file.content_type and not file.content_type.startswith("audio/"):
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            f"Expected an audio file, got content type '{file.content_type}'.",
+        )
+
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Uploaded audio file is empty."
+        )
+
+    # 1. Speech-to-text
+    try:
+        student_text = voice.transcribe_audio(audio_bytes, file.filename or "audio.webm")
+    except VoiceServiceError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"Could not transcribe audio: {exc}"
+        )
+    if not student_text:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Could not understand the audio. Please try speaking again.",
+        )
+
+    # 2. Existing tutor flow (unchanged) — same method the typed chat uses.
+    result = tutor.send_student_message_and_get_tutor_reply(session_id, student_text)
+
+    # 3. Text-to-speech. A TTS failure must not break the tutor turn: we still
+    #    return the text reply, just without audio.
+    audio_base64: str | None = None
+    try:
+        audio_base64 = voice.synthesize_speech(result.tutor_message)
+    except VoiceServiceError:
+        log.warning("tts failed for session_id=%s; returning text-only reply", session_id)
+
+    return VoiceTurnResult(
+        student_text=student_text,
+        tutor_message=result.tutor_message,
+        phase=result.phase,
+        audio_base64=audio_base64,
     )
 
 
