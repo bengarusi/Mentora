@@ -4,6 +4,8 @@ import { getMessages, getSession } from "../api/sessions";
 import { advancePhase, sendVoiceTurn, speakTutorMessage, streamTurn } from "../api/tutor";
 import { ChatWindow } from "../components/ChatWindow";
 import { LearningPathSidebar } from "../components/LearningPathSidebar";
+import { TeacherAvatar } from "../components/TeacherAvatar";
+import type { AvatarState } from "../components/TeacherAvatar";
 import type { LessonPhase, Message, Session } from "../types";
 
 const PHASE_ORDER: LessonPhase[] = [
@@ -33,6 +35,7 @@ export function LessonPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [avatarState, setAvatarState] = useState<AvatarState>("idle");
 
   // ---- voice interaction state (thin layer over the existing chat) ----
   const [recording, setRecording] = useState(false);
@@ -62,11 +65,21 @@ export function LessonPage() {
   }, []);
 
   const playTutorAudio = useCallback((audioBase64: string) => {
+    // Stop any previous TTS audio before starting a new one.
+    // Clear onended first so the stale callback can't fire after pause() and
+    // incorrectly reset the avatar state while the new clip is starting.
+    if (audioElRef.current) {
+      audioElRef.current.onended = null;
+      audioElRef.current.pause();
+    }
     const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
     audioElRef.current = audio;
+    audio.onended = () => setAvatarState("idle");
     // Autoplay can be rejected by the browser; the text reply is already shown,
     // so a failed playback is non-fatal.
+    setAvatarState("speaking");
     audio.play().catch(() => {
+      setAvatarState("idle");
       setVoiceError("Tap to enable sound — autoplay was blocked by the browser.");
     });
   }, []);
@@ -76,6 +89,7 @@ export function LessonPage() {
       const trimmed = text.trim();
       if (!trimmed || busy) return;
       setBusy(true);
+      setAvatarState("thinking");
 
       const studentId = -Date.now();
       const tutorId = studentId - 1;
@@ -98,15 +112,22 @@ export function LessonPage() {
         });
 
         // Speak every tutor reply when voice playback is on, not just voice turns.
+        let ttsPlaying = false;
         if (voicePlayback && fullReply.trim()) {
           try {
             const audio = await speakTutorMessage(id, fullReply.trim());
-            if (audio) playTutorAudio(audio);
+            if (audio) {
+              playTutorAudio(audio); // sets avatarState → "speaking" then "idle"
+              ttsPlaying = true;
+            }
           } catch {
             // TTS failure is non-fatal — text is already visible in the chat.
           }
         }
+        // If no TTS was started, return avatar to idle now.
+        if (!ttsPlaying) setAvatarState("idle");
       } catch {
+        setAvatarState("idle");
         await reload();
       } finally {
         setBusy(false);
@@ -119,6 +140,7 @@ export function LessonPage() {
   const submitVoice = useCallback(
     async (audioBlob: Blob) => {
       setBusy(true);
+      setAvatarState("thinking");
       try {
         const result = await sendVoiceTurn(id, audioBlob);
         const studentId = -Date.now();
@@ -130,9 +152,12 @@ export function LessonPage() {
           { id: tutorId, session_id: id, role: "tutor", content: result.tutor_message, created_at: null },
         ]);
         if (result.audio_base64 && voicePlayback) {
-          playTutorAudio(result.audio_base64);
+          playTutorAudio(result.audio_base64); // sets avatarState → "speaking" then "idle"
+        } else {
+          setAvatarState("idle");
         }
       } catch (err: unknown) {
+        setAvatarState("idle");
         const resp = (err as {
           response?: { status?: number; data?: { detail?: string } };
         })?.response;
@@ -392,6 +417,10 @@ export function LessonPage() {
       </section>
 
       <aside className="lesson-progress-panel">
+        <div className="teacher-avatar-section">
+          <TeacherAvatar state={avatarState} audioElementRef={audioElRef} />
+        </div>
+
         <h3 className="progress-panel-title">Your Progress</h3>
 
         <div className="context-card">
@@ -447,10 +476,6 @@ export function LessonPage() {
           </p>
         </div>
 
-        <div className="panel-visual">
-          <span className="material-symbols-outlined">calculate</span>
-          <span className="caption">{session.subtopic || session.topic}</span>
-        </div>
       </aside>
     </div>
   );

@@ -1765,3 +1765,140 @@ textarea {
     padding: 1.25rem;
   }
 }
+
+/* =========================================================================
+   TeacherAvatar component
+   ========================================================================= */
+
+.teacher-avatar-section {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0 1rem;
+  border-bottom: 1px solid var(--color-surface-high);
+  margin-bottom: 1rem;
+}
+
+.teacher-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  user-select: none;
+  width: 140px;
+}
+
+.teacher-avatar svg {
+  width: 100%;
+  height: auto;
+}
+
+/* ---- idle: gentle float (slowed slightly for a serene feel) ---- */
+.teacher-avatar--idle svg {
+  animation: ta-float 4s ease-in-out infinite;
+}
+
+@keyframes ta-float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-6px); }
+}
+
+/* ---- thinking: same calm float ---- */
+.teacher-avatar--thinking svg {
+  animation: ta-float 4s ease-in-out infinite;
+}
+
+/* ---- speaking: subtle head bob tied to speech rhythm ---- */
+.teacher-avatar--speaking svg {
+  animation: ta-head-bob 0.54s ease-in-out infinite;
+}
+
+@keyframes ta-head-bob {
+  0%, 100% { transform: translateY(0)    rotate(0deg); }
+  30%      { transform: translateY(-2px) rotate(0.4deg); }
+  70%      { transform: translateY(1px)  rotate(-0.3deg); }
+}
+
+/* ---- speaking: gentle purple glow pulse ---- */
+.teacher-avatar--speaking {
+  animation: ta-glow-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ta-glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 4px  rgba(107, 56, 212, 0.18)); }
+  50%      { filter: drop-shadow(0 0 13px rgba(107, 56, 212, 0.42)); }
+}
+
+/* ---- eye blink — idle and thinking only; paused while speaking ---- */
+.teacher-avatar .ta-eye {
+  transform-box: fill-box;
+  transform-origin: center center;
+  /* 5 s keeps blinking natural (~12×/min); the slight rebound at 85% adds life */
+  animation: ta-blink 5s ease-in-out infinite;
+}
+.teacher-avatar .ta-eye--right {
+  animation-delay: 0.18s;
+}
+.teacher-avatar--speaking .ta-eye {
+  animation: none;
+}
+
+@keyframes ta-blink {
+  0%, 78%, 100% { transform: scaleY(1); }
+  82%           { transform: scaleY(0.1); }   /* close */
+  85%           { transform: scaleY(0.88); }  /* flutter open */
+  88%           { transform: scaleY(1); }     /* fully open */
+}
+
+/* ---- thinking dots ---- */
+.ta-thinking-dots {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+}
+
+.ta-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: ta-dot-bounce 1.2s ease-in-out infinite;
+  opacity: 0.5;
+}
+.ta-dot:nth-child(2) { animation-delay: 0.2s; }
+.ta-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ta-dot-bounce {
+  0%, 100% { transform: translateY(0);    opacity: 0.35; }
+  50%       { transform: translateY(-8px); opacity: 1;    }
+}
+
+/* ---- Web Audio mouth shapes: smooth transition between discrete shape steps ----
+   Applied to the mouth ellipse elements when Web Audio is producing data.
+   The inline `transform` style changes at ~30 fps; the CSS transition smooths jumps. */
+.ta-mouth-shape {
+  transform-box: fill-box;
+  transform-origin: center center;
+  transition: transform 0.07s ease-out, opacity 0.07s ease-out;
+}
+
+/* ---- CSS fallback mouth animation (active when Web Audio is silent) ----
+   Cycles: closed → small → medium → wide → oh-shape → medium → small → closed
+   matching the same shape values used by getMouthShape() in TeacherAvatar.tsx. */
+.ta-mouth-speaking-css {
+  transform-box: fill-box;
+  transform-origin: center center;
+  animation: ta-mouth-speak 0.62s ease-in-out infinite;
+}
+
+@keyframes ta-mouth-speak {
+  0%        { transform: scaleX(0.82) scaleY(0.11); } /* closed   */
+  12%       { transform: scaleX(0.88) scaleY(0.42); } /* small    */
+  28%       { transform: scaleX(1.00) scaleY(0.80); } /* medium   */
+  42%       { transform: scaleX(0.76) scaleY(1.00); } /* oh-shape */
+  56%       { transform: scaleX(1.00) scaleY(0.68); } /* medium   */
+  70%       { transform: scaleX(0.88) scaleY(0.35); } /* small    */
+  84%, 100% { transform: scaleX(0.82) scaleY(0.11); } /* closed   */
+}
