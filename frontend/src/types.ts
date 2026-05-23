@@ -55,6 +55,13 @@ export interface PhaseResult {
   tutor_message: string | null;
 }
 
+export interface VoiceTurnResult {
+  student_text: string;
+  tutor_message: string;
+  phase: LessonPhase;
+  audio_base64: string | null;
+}
+
 // ---- Practice types ----
 
 export interface PracticeQuestion {

@@ -7,6 +7,7 @@ import type {
   PracticeSubmitResult,
   PracticeSummary,
   TurnResult,
+  VoiceTurnResult,
 } from "../types";
 
 export async function sendTurn(
@@ -47,6 +48,34 @@ export async function streamTurn(
     const chunk = decoder.decode(value, { stream: true });
     if (chunk) onToken(chunk);
   }
+}
+
+export async function speakTutorMessage(
+  sessionId: number,
+  text: string
+): Promise<string | null> {
+  const { data } = await apiClient.post<{ audio_base64: string | null }>(
+    `/tutor/${sessionId}/tts`,
+    { text },
+    { timeout: 30000 }
+  );
+  return data.audio_base64;
+}
+
+// Send recorded audio to the voice endpoint. The browser sets the multipart
+// boundary automatically; apiClient's interceptor adds the auth token.
+export async function sendVoiceTurn(
+  sessionId: number,
+  audioBlob: Blob
+): Promise<VoiceTurnResult> {
+  const form = new FormData();
+  form.append("file", audioBlob, "recording.webm");
+  const { data } = await apiClient.post<VoiceTurnResult>(
+    `/tutor/${sessionId}/voice-turn`,
+    form,
+    { timeout: 60000 } // STT + tutor reply + TTS chained — needs more than the 30s default
+  );
+  return data;
 }
 
 export async function advancePhase(sessionId: number): Promise<PhaseResult> {
