@@ -3,8 +3,26 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getMessages, getSession } from "../api/sessions";
 import { advancePhase, streamTurn } from "../api/tutor";
 import { ChatWindow } from "../components/ChatWindow";
-import { PhaseBadge } from "../components/PhaseBadge";
-import type { Message, Session } from "../types";
+import { LearningPathSidebar } from "../components/LearningPathSidebar";
+import type { LessonPhase, Message, Session } from "../types";
+
+const PHASE_ORDER: LessonPhase[] = [
+  "teaching",
+  "pre_practice_example",
+  "practice",
+  "practice_summary",
+  "summary",
+  "completed",
+];
+
+const PHASE_LABEL: Record<LessonPhase, string> = {
+  teaching: "Teaching",
+  pre_practice_example: "Guided Example",
+  practice: "Practice",
+  practice_summary: "Practice Results",
+  summary: "Summary",
+  completed: "Completed",
+};
 
 export function LessonPage() {
   const { sessionId } = useParams();
@@ -26,45 +44,42 @@ export function LessonPage() {
     reload();
   }, [reload]);
 
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    setBusy(true);
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || busy) return;
+      setBusy(true);
 
-    // Optimistically show the student's message and an empty tutor bubble that
-    // fills in as tokens stream. Temporary negative ids avoid clashing with
-    // real DB ids; we never refetch on success.
-    const studentId = -Date.now();
-    const tutorId = studentId - 1;
-    setMessages((prev) => [
-      ...prev,
-      { id: studentId, session_id: id, role: "student", content: text, created_at: null },
-      { id: tutorId, session_id: id, role: "tutor", content: "", created_at: null },
-    ]);
-    setDraft("");
+      const studentId = -Date.now();
+      const tutorId = studentId - 1;
+      setMessages((prev) => [
+        ...prev,
+        { id: studentId, session_id: id, role: "student", content: trimmed, created_at: null },
+        { id: tutorId, session_id: id, role: "tutor", content: "", created_at: null },
+      ]);
+      setDraft("");
 
-    try {
-      await streamTurn(id, text, (delta) => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tutorId ? { ...m, content: m.content + delta } : m
-          )
-        );
-      });
-    } catch {
-      // Recover canonical state if the stream fails.
-      await reload();
-    } finally {
-      setBusy(false);
-    }
-  }
+      try {
+        await streamTurn(id, trimmed, (delta) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tutorId ? { ...m, content: m.content + delta } : m
+            )
+          );
+        });
+      } catch {
+        await reload();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, id, reload]
+  );
 
-  async function handleLetsPractice() {
+  async function handleStartPractice() {
     setBusy(true);
     try {
       const result = await advancePhase(id);
-      // Result phase will be "pre_practice_example"; pass the generated example via nav state
       navigate(`/lesson/${id}/pre-practice`, {
         state: { exampleContent: result.tutor_message },
       });
@@ -76,7 +91,7 @@ export function LessonPage() {
   async function handleFinishLesson() {
     setBusy(true);
     try {
-      await advancePhase(id);  // SUMMARY → COMPLETED
+      await advancePhase(id); // SUMMARY → COMPLETED
       navigate(`/lesson/${id}/summary`);
     } finally {
       setBusy(false);
@@ -84,66 +99,210 @@ export function LessonPage() {
   }
 
   if (!session) {
-    return <div className="container">Loading lesson…</div>;
+    return (
+      <div className="lesson-layout no-right">
+        <LearningPathSidebar active="lessons" />
+        <div className="chat-main">
+          <p className="chat-empty">Loading lesson…</p>
+        </div>
+      </div>
+    );
   }
 
-  const phase = session.phase;
+  const phase = (session.phase ?? "teaching") as LessonPhase;
+  const isTeaching = phase === "teaching";
   const canChat = phase === "teaching" || phase === "summary";
+  const progressPct =
+    ((PHASE_ORDER.indexOf(phase) + 1) / PHASE_ORDER.length) * 100;
 
   return (
-    <div className="container lesson">
-      <div className="lesson-header">
-        <div>
-          <h2>
-            {session.subject} — {session.topic}
-          </h2>
-          <p className="muted">Goal: {session.goal_text}</p>
-        </div>
-        <PhaseBadge phase={phase} />
-      </div>
+    <div className="lesson-layout">
+      <LearningPathSidebar
+        active="lessons"
+        action={
+          isTeaching ? (
+            <button
+              type="button"
+              className="primary-button pressable-button"
+              onClick={handleStartPractice}
+              disabled={busy}
+            >
+              <span className="material-symbols-outlined">fitness_center</span>
+              Start Practice
+            </button>
+          ) : undefined
+        }
+      />
 
-      <ChatWindow messages={messages} />
+      <section className="chat-main">
+        <ChatWindow messages={messages} />
 
-      {canChat && (
-        <form className="turn-form" onSubmit={handleSend}>
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Ask the tutor a question…"
-            disabled={busy}
-          />
-          <button type="submit" disabled={busy || !draft.trim()}>
-            Send
-          </button>
-        </form>
-      )}
+        {isTeaching && (
+          <div className="quick-actions">
+            <button
+              type="button"
+              className="pill-button pressable-button"
+              onClick={() => sendMessage("Can you explain this again in a simpler way?")}
+              disabled={busy}
+            >
+              Explain again
+            </button>
+            <button
+              type="button"
+              className="pill-button pressable-button"
+              onClick={() => sendMessage("Can you give me another example?")}
+              disabled={busy}
+            >
+              Give me an example
+            </button>
+            <button
+              type="button"
+              className="pill-button pressable-button"
+              onClick={handleStartPractice}
+              disabled={busy}
+            >
+              I&apos;m ready to practice
+            </button>
+          </div>
+        )}
 
-      <div className="lesson-actions">
-        {phase === "teaching" && (
-          <button
-            className="btn-primary"
-            onClick={handleLetsPractice}
-            disabled={busy}
+        {canChat && (
+          <form
+            className="chat-input-bar"
+            onSubmit={(e) => {
+              e.preventDefault();
+              sendMessage(draft);
+            }}
           >
-            Let's Practice
-          </button>
+            <span className="material-symbols-outlined chat-add">add_circle</span>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type your message here…"
+              disabled={busy}
+            />
+            <button
+              type="submit"
+              className="primary-button pressable-button chat-send"
+              disabled={busy || !draft.trim()}
+            >
+              Send
+              <span className="material-symbols-outlined">send</span>
+            </button>
+          </form>
         )}
+
+        {!canChat && (
+          <div className="lesson-cta-row">
+            {phase === "pre_practice_example" && (
+              <button
+                className="primary-button pressable-button"
+                onClick={() => navigate(`/lesson/${id}/pre-practice`)}
+              >
+                Continue to Example
+              </button>
+            )}
+            {phase === "practice" && (
+              <button
+                className="primary-button pressable-button"
+                onClick={() => navigate(`/lesson/${id}/practice`)}
+              >
+                Go to Practice
+              </button>
+            )}
+            {phase === "practice_summary" && (
+              <button
+                className="primary-button pressable-button"
+                onClick={() => navigate(`/lesson/${id}/practice/summary`)}
+              >
+                View Practice Results
+              </button>
+            )}
+            {phase === "completed" && (
+              <button
+                className="primary-button pressable-button"
+                onClick={() => navigate(`/lesson/${id}/summary`)}
+              >
+                View Summary
+              </button>
+            )}
+          </div>
+        )}
+
         {phase === "summary" && (
-          <button onClick={handleFinishLesson} disabled={busy}>
-            Finish Lesson
-          </button>
+          <div className="lesson-cta-row">
+            <button
+              className="secondary-button pressable-button"
+              onClick={handleFinishLesson}
+              disabled={busy}
+            >
+              Finish Lesson
+            </button>
+          </div>
         )}
-        {phase === "completed" && (
-          <button onClick={() => navigate(`/lesson/${id}/summary`)}>
-            View Summary
-          </button>
-        )}
-        {phase === "practice_summary" && (
-          <button onClick={() => navigate(`/lesson/${id}/practice/summary`)}>
-            View Practice Results
-          </button>
-        )}
-      </div>
+      </section>
+
+      <aside className="lesson-progress-panel">
+        <h3 className="progress-panel-title">Your Progress</h3>
+
+        <div className="context-card">
+          <div className="context-row">
+            <span className="material-symbols-outlined">menu_book</span>
+            <div>
+              <div className="context-row-label">Topic</div>
+              <div className="context-row-value">{session.topic}</div>
+            </div>
+          </div>
+          {session.subtopic && (
+            <div className="context-row">
+              <span className="material-symbols-outlined">target</span>
+              <div>
+                <div className="context-row-label">Subtopic</div>
+                <div className="context-row-value">{session.subtopic}</div>
+              </div>
+            </div>
+          )}
+          <div className="context-row">
+            <span className="material-symbols-outlined">flag</span>
+            <div>
+              <div className="context-row-label">Phase</div>
+              <div className="context-row-value">{PHASE_LABEL[phase]}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="context-card">
+          <div className="mastery-block">
+            <div className="mastery-head">
+              <span>Lesson progress</span>
+              <span>{Math.round(progressPct)}%</span>
+            </div>
+            <div className="mastery-bar">
+              <span style={{ width: `${progressPct}%` }} />
+            </div>
+          </div>
+          <div className="context-row-label" style={{ marginTop: "0.25rem" }}>
+            Goal
+          </div>
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>{session.goal_text}</p>
+        </div>
+
+        <div className="mentor-tip-card">
+          <h4>
+            <span className="material-symbols-outlined">tips_and_updates</span>
+            Mentor Tip
+          </h4>
+          <p>
+            Take your time and think out loud. Asking the tutor questions is one
+            of the best ways to learn!
+          </p>
+        </div>
+
+        <div className="panel-visual">
+          <span className="material-symbols-outlined">calculate</span>
+          <span className="caption">{session.subtopic || session.topic}</span>
+        </div>
+      </aside>
     </div>
   );
 }

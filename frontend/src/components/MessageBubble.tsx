@@ -9,9 +9,13 @@ export const MessageBubble = memo(function MessageBubble({
 }) {
   const isTutor = message.role === "tutor";
   return (
-    <div className={`bubble ${isTutor ? "bubble-tutor" : "bubble-student"}`}>
-      <span className="bubble-role">{isTutor ? "Tutor" : "You"}</span>
-      <div className="bubble-content">
+    <div className={`chat-row ${isTutor ? "tutor" : "student"}`}>
+      <div className={`msg-avatar ${isTutor ? "tutor" : "student"}`}>
+        <span className="material-symbols-outlined">
+          {isTutor ? "smart_toy" : "person"}
+        </span>
+      </div>
+      <div className={isTutor ? "tutor-message" : "student-message"}>
         {message.content === "" ? (
           <span className="typing-cursor">▍</span>
         ) : (

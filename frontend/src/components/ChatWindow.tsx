@@ -10,8 +10,10 @@ export function ChatWindow({ messages }: { messages: Message[] }) {
   }, [messages]);
 
   return (
-    <div className="chat-window">
-      {messages.length === 0 && <p className="muted">No messages yet.</p>}
+    <div className="chat-scroll-area">
+      {messages.length === 0 && (
+        <p className="chat-empty">Your tutor is getting ready…</p>
+      )}
       {messages.map((m) => (
         <MessageBubble key={m.id} message={m} />
       ))}

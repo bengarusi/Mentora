@@ -29,6 +29,7 @@ export interface Session {
   student_id: number;
   subject: string;
   topic: string;
+  subtopic: string;
   goal_text: string;
   status: string;
   phase: LessonPhase | null;
@@ -131,4 +132,31 @@ export interface StudentProgress {
   total_questions_answered: number;
   average_percentage: number | null;
   recent: RecentSession[];
+}
+
+// ---- topic/subtopic progress map ----
+export type ProgressStatus =
+  | "mastered"
+  | "in_progress"
+  | "needs_practice"
+  | "not_started";
+
+export interface SubtopicProgress {
+  subtopic: string;
+  mastery_percentage: number | null;
+  status: string;
+  sessions_count: number;
+  last_session_id: number | null;
+}
+
+export interface TopicProgress {
+  topic: string;
+  mastery_percentage: number | null;
+  status: string;
+  sessions_count: number;
+  subtopics: SubtopicProgress[];
+}
+
+export interface ProgressMap {
+  topics: TopicProgress[];
 }

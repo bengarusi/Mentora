@@ -79,11 +79,18 @@ class TutorService:
     def create_lesson_and_generate_first_explanation(
         self, data: SessionCreate
     ) -> LessonSession:
+        subtopic = (data.subtopic or "").strip()
+        if not subtopic:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "A subtopic is required to start a lesson.",
+            )
         session = self.sessions.add(
             LessonSession(
                 student_id=self.student.id,
                 subject=data.subject.value,
                 topic=data.topic,
+                subtopic=subtopic,
                 goal_text=data.goal_text,
                 status=SessionStatus.ACTIVE.value,
                 phase=LessonPhase.TEACHING.value,

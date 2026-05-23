@@ -16,6 +16,7 @@ def _make_session(db, student_id, subject="math"):
         student_id=student_id,
         subject=subject,
         topic="Topic",
+        subtopic="Subtopic",
         goal_text="Goal",
         status=SessionStatus.ACTIVE.value,
         phase=LessonPhase.TEACHING.value,

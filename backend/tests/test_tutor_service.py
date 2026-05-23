@@ -14,7 +14,12 @@ def _service(db):
 
 def _start(db):
     service, student = _service(db)
-    data = SessionCreate(subject="math", topic="Fractions", goal_text="Learn fractions")
+    data = SessionCreate(
+        subject="math",
+        topic="Fractions",
+        subtopic="Adding fractions",
+        goal_text="Learn fractions",
+    )
     session = service.create_lesson_and_generate_first_explanation(data)
     return service, session
 

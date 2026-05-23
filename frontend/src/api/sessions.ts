@@ -4,6 +4,7 @@ import type { Message, Session, Subject } from "../types";
 export interface CreateSessionPayload {
   subject: Subject;
   topic: string;
+  subtopic: string;
   goal_text: string;
 }
 

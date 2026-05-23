@@ -90,4 +90,5 @@ class LessonContext:
             age=self.student.age,
             level=level,
             recent_messages=recent,
+            subtopic=getattr(self.session, "subtopic", None),
         )

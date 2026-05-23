@@ -69,7 +69,12 @@ def test_student_cannot_read_another_students_session(client):
     headers_a = auth_headers(client, email="a@example.com")
     created = client.post(
         "/sessions/",
-        json={"subject": "math", "topic": "Addition", "goal_text": "Add numbers"},
+        json={
+            "subject": "math",
+            "topic": "Addition",
+            "subtopic": "Addition basics",
+            "goal_text": "Add numbers",
+        },
         headers=headers_a,
     )
     assert created.status_code == 200

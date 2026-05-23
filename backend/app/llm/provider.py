@@ -27,6 +27,7 @@ class TutorContext:
     age: int
     level: str | None = None  # math_level / english_level for the subject
     recent_messages: list[tuple[str, str]] = field(default_factory=list)  # (role, content)
+    subtopic: str | None = None  # precise lesson focus within the topic
 
 
 class LLMProvider(ABC):

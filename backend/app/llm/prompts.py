@@ -10,6 +10,7 @@ from app.llm.provider import TutorContext
 
 def _persona(ctx: TutorContext) -> str:
     level = f"\nStudent level in this subject: {ctx.level}." if ctx.level else ""
+    subtopic = f"- Subtopic (the precise focus of this lesson): {ctx.subtopic}\n" if ctx.subtopic else ""
 
     return (
         f"You are Mentora, a professional, patient, and encouraging tutor.\n"
@@ -18,6 +19,7 @@ def _persona(ctx: TutorContext) -> str:
         f"- Age: {ctx.age}\n"
         f"- Subject: {ctx.subject}\n"
         f"- Topic: {ctx.topic}\n"
+        f"{subtopic}"
         f"- Lesson goal: {ctx.goal_text}"
         f"{level}\n\n"
 
@@ -69,14 +71,18 @@ def teaching_intro_prompt(ctx: TutorContext) -> tuple[str, str]:
         "- Do NOT say 'Let's Practice' immediately — only suggest it after several correct answers.\n\n"
 
         "Required structure — use Markdown formatting:\n"
-        "1. Short explanation (3-4 sentences, use **bold** for key terms)\n"
-        "2. **Example:** header followed by numbered steps\n"
-        "3. One small question for the student (on its own line)\n\n"
+        "1. A short heading naming the concept, using '## '.\n"
+        "2. Short explanation (3-4 sentences, use **bold** for key terms).\n"
+        "3. The single most important rule as a blockquote on its own line: "
+        "'> **Key rule:** ...'.\n"
+        "4. An **Example:** header followed by numbered steps.\n"
+        "5. One small question for the student (on its own line).\n\n"
 
         "Formatting rules:\n"
         "- Use **bold** for key math terms and answers.\n"
         "- Use numbered lists for worked example steps.\n"
-        "- Use a blank line between each section.\n\n"
+        "- Use a blank line between each section.\n"
+        "- Keep it concise — do not write long paragraphs.\n\n"
 
         "Write the teaching introduction now."
     )

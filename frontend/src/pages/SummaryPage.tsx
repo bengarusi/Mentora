@@ -1,62 +1,209 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
+import { createSession, getSession } from "../api/sessions";
 import { getLessonSummary, getPracticeSummary } from "../api/tutor";
+import { LearningPathSidebar } from "../components/LearningPathSidebar";
 import { RichText } from "../components/RichText";
-import type { PracticeSummary } from "../types";
+import type { PracticeSummary, Session } from "../types";
+
+const LEVEL_LABEL: Record<string, string> = {
+  achieved: "Excellent",
+  partially: "Good effort",
+  not_achieved: "Keep practicing",
+};
 
 export function SummaryPage() {
   const { sessionId } = useParams();
   const id = Number(sessionId);
+  const navigate = useNavigate();
+  const { student } = useAuth();
 
   const [summary, setSummary] = useState<PracticeSummary | null>(null);
-  const [summaryMessage, setSummaryMessage] = useState<string | null>(null);
+  const [summaryText, setSummaryText] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     getPracticeSummary(id).then(setSummary).catch(() => null);
-    // Use the dedicated endpoint so we always get the lesson summary text,
-    // not whatever happens to be the last message in the DB.
-    getLessonSummary(id)
-      .then((r) => setSummaryMessage(r.summary_text))
-      .catch(() => null);
+    getLessonSummary(id).then((r) => setSummaryText(r.summary_text)).catch(() => null);
+    getSession(id).then(setSession).catch(() => null);
   }, [id]);
 
-  const levelLabel: Record<string, string> = {
-    achieved: "Excellent",
-    partially: "Good effort",
-    not_achieved: "Keep practicing",
-  };
+  async function handlePracticeAgain() {
+    if (!session) return;
+    setBusy(true);
+    try {
+      const fresh = await createSession({
+        subject: "math",
+        topic: session.topic,
+        subtopic: session.subtopic,
+        goal_text: session.goal_text,
+      });
+      navigate(`/lesson/${fresh.id}`);
+    } catch {
+      setBusy(false);
+    }
+  }
+
+  const name = student?.full_name?.trim().split(" ")[0];
+  const greeting = name ? `Awesome Work, ${name}!` : "Awesome Work!";
+
+  const hasScore = !!summary && summary.total_questions > 0;
+  const pct = hasScore
+    ? Math.round((summary!.total_correct / summary!.total_questions) * 100)
+    : 100;
+  const level = summary?.success_level
+    ? LEVEL_LABEL[summary.success_level] ?? summary.success_level
+    : null;
+  const achieved = summary?.success_level === "achieved";
+
+  const subtopic = session?.subtopic;
+  const focusText = !summary
+    ? "Great effort today — keep up the good work!"
+    : achieved
+    ? `You've got a strong grasp of ${subtopic ?? "this topic"}!`
+    : `Keep practicing ${subtopic ?? "this topic"} to build your confidence.`;
 
   return (
-    <div className="container">
-      <h2>Lesson Complete</h2>
+    <div className="lesson-layout no-right">
+      <LearningPathSidebar active="lessons" />
 
-      {summaryMessage && (
-        <div className="card">
-          <div className="bubble-content">
-            <RichText content={summaryMessage} />
+      <section className="summary-page">
+        <div className="summary-inner">
+          <div className="summary-hero">
+            <div className="summary-hero-text">
+              <h1>{greeting}</h1>
+              <p>
+                {session
+                  ? `You finished ${session.subtopic || session.topic}. Here's how it went!`
+                  : "Here's how your lesson went!"}
+              </p>
+              <div className="summary-chips">
+                <span className="status-chip green">
+                  <span className="material-symbols-outlined">verified</span>
+                  Lesson complete
+                </span>
+                {level && (
+                  <span className={`status-chip ${achieved ? "green" : "amber"}`}>
+                    <span className="material-symbols-outlined">military_tech</span>
+                    {level}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="summary-ring" style={{ ["--pct" as string]: pct }}>
+              <div className="ring-label">
+                <span className="ring-pct">{pct}%</span>
+                <span className="ring-cap">Completed</span>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
 
-      {summary && (
-        <div className="card summary-head">
-          <div>
-            <strong>
-              Practice score: {summary.total_correct} / {summary.total_questions}
-            </strong>
-            {summary.success_level && (
-              <span className="muted" style={{ marginLeft: "1rem" }}>
-                {levelLabel[summary.success_level] ?? summary.success_level}
-              </span>
+          <div className="summary-grid">
+            <div className="learned-card">
+              <h3>
+                <span className="material-symbols-outlined">done_all</span>
+                What you learned
+              </h3>
+              <ul className="summary-list">
+                {session && (
+                  <li>
+                    <span className="material-symbols-outlined">check_circle</span>
+                    <div>
+                      <strong>{session.subtopic || session.topic}</strong>
+                      <div className="muted" style={{ fontSize: "0.85rem" }}>
+                        {session.goal_text}
+                      </div>
+                    </div>
+                  </li>
+                )}
+                {hasScore && (
+                  <li>
+                    <span className="material-symbols-outlined">check_circle</span>
+                    <div>
+                      <strong>
+                        {summary!.total_correct} / {summary!.total_questions} practice
+                        questions correct
+                      </strong>
+                    </div>
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            <div className="tutor-note-card">
+              <h3>
+                <span className="material-symbols-outlined">auto_awesome</span>
+                Tutor&apos;s Note
+              </h3>
+              {summaryText ? (
+                <RichText content={summaryText} />
+              ) : (
+                <p>Great work finishing this lesson. Keep it up!</p>
+              )}
+            </div>
+          </div>
+
+          <div className="focus-card">
+            <div className="focus-body">
+              <h3>
+                <span className="material-symbols-outlined">flag</span>
+                Focus Area
+              </h3>
+              <p className="muted" style={{ margin: 0 }}>{focusText}</p>
+            </div>
+            {hasScore && (
+              <div className="mastery-block">
+                <div className="mastery-head">
+                  <span>Practice score</span>
+                  <span>{pct}%</span>
+                </div>
+                <div className="mastery-bar">
+                  <span style={{ width: `${pct}%` }} />
+                </div>
+              </div>
             )}
+            <button
+              className="secondary-button pressable-button"
+              onClick={handlePracticeAgain}
+              disabled={busy || !session}
+            >
+              Quick Practice
+            </button>
+          </div>
+
+          <div className="summary-actions">
+            <button
+              className="secondary-button pressable-button"
+              onClick={handlePracticeAgain}
+              disabled={busy || !session}
+            >
+              <span className="material-symbols-outlined">refresh</span>
+              Practice Again
+            </button>
+            <button
+              className="primary-button pressable-button"
+              onClick={() => navigate("/")}
+            >
+              <span className="material-symbols-outlined">arrow_forward</span>
+              Continue Learning
+            </button>
+            <button
+              className="ghost-button pressable-button"
+              onClick={() => navigate("/")}
+            >
+              Choose Another Topic
+            </button>
+            <button
+              className="ghost-button pressable-button"
+              onClick={() => navigate("/progress")}
+            >
+              View Progress
+            </button>
           </div>
         </div>
-      )}
-
-      <div className="lesson-actions">
-        <Link to="/progress">View progress</Link>
-        <Link to="/new">Start another lesson</Link>
-      </div>
+      </section>
     </div>
   );
 }

@@ -22,3 +22,27 @@ class StudentProgressResponse(BaseModel):
     total_questions_answered: int = 0
     average_percentage: float | None = None  # 0–100, replaces the old "avg score / 3"
     recent: list[RecentSessionDTO] = []
+
+
+# ---- topic/subtopic progress map ----
+# status is one of: mastered | in_progress | needs_practice | not_started
+
+
+class SubtopicProgress(BaseModel):
+    subtopic: str  # the stored subtopic title (frontend matches it to the curriculum)
+    mastery_percentage: int | None = None
+    status: str
+    sessions_count: int = 0
+    last_session_id: int | None = None
+
+
+class TopicProgress(BaseModel):
+    topic: str  # the stored topic title
+    mastery_percentage: int | None = None
+    status: str
+    sessions_count: int = 0
+    subtopics: list[SubtopicProgress] = []
+
+
+class ProgressMapResponse(BaseModel):
+    topics: list[TopicProgress] = []

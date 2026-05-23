@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Link, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { LoginPage } from "./pages/LoginPage";
@@ -10,6 +10,11 @@ import { RegisterPage } from "./pages/RegisterPage";
 // keeping the initial/login bundle light.
 const NewLessonPage = lazy(() =>
   import("./pages/NewLessonPage").then((m) => ({ default: m.NewLessonPage }))
+);
+const SubTopicSelectionPage = lazy(() =>
+  import("./pages/SubTopicSelectionPage").then((m) => ({
+    default: m.SubTopicSelectionPage,
+  }))
 );
 const LessonPage = lazy(() =>
   import("./pages/LessonPage").then((m) => ({ default: m.LessonPage }))
@@ -36,6 +41,9 @@ const ProgressPage = lazy(() =>
 
 function AppLayout() {
   const { student, logout } = useAuth();
+  const initial = student?.full_name?.trim().charAt(0).toUpperCase() || "?";
+  const navClass = ({ isActive }: { isActive: boolean }) =>
+    isActive ? "active" : undefined;
   return (
     <div className="app">
       <header className="topbar">
@@ -43,18 +51,30 @@ function AppLayout() {
           Mentora
         </Link>
         <nav>
-          <Link to="/new">New lesson</Link>
-          <Link to="/progress">Progress</Link>
+          <NavLink to="/" end className={navClass}>
+            Home
+          </NavLink>
+          <NavLink to="/progress" className={navClass}>
+            My Lessons
+          </NavLink>
         </nav>
         <div className="topbar-right">
-          {student && <span className="muted">{student.full_name}</span>}
+          <Link to="/progress" className="topbar-tracker">
+            <span className="material-symbols-outlined">analytics</span>
+            Progress Tracker
+          </Link>
+          {student && (
+            <span className="avatar-chip" title={student.full_name}>
+              {initial}
+            </span>
+          )}
           <button className="link-button" onClick={logout}>
             Log out
           </button>
         </div>
       </header>
       <main>
-        <Suspense fallback={<div className="container">Loading…</div>}>
+        <Suspense fallback={<div className="page-shell">Loading…</div>}>
           <Outlet />
         </Suspense>
       </main>
@@ -76,6 +96,7 @@ export default function App() {
       >
         <Route path="/" element={<NewLessonPage />} />
         <Route path="/new" element={<NewLessonPage />} />
+        <Route path="/topic/:topicId" element={<SubTopicSelectionPage />} />
         <Route path="/progress" element={<ProgressPage />} />
         <Route path="/lesson/:sessionId" element={<LessonPage />} />
         <Route

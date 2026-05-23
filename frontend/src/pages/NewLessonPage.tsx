@@ -1,76 +1,76 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createSession } from "../api/sessions";
-import type { Subject } from "../types";
+import { MATH_CURRICULUM } from "../data/mathCurriculum";
 
 export function NewLessonPage() {
   const navigate = useNavigate();
-  const [subject, setSubject] = useState<Subject>("math");
-  const [topic, setTopic] = useState("");
-  const [goal, setGoal] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      const session = await createSession({ subject, topic, goal_text: goal });
-      navigate(`/lesson/${session.id}`);
-    } catch {
-      setError("Could not start the lesson. Please try again.");
-    } finally {
-      setBusy(false);
-    }
+  function startLesson() {
+    if (!selectedTopic) return;
+    navigate(`/topic/${selectedTopic}`);
   }
 
   return (
-    <div className="new-lesson-page">
-      <form className="new-lesson-form" onSubmit={handleSubmit}>
-        <div className="new-lesson-brand">Mentora</div>
-        <h2 className="new-lesson-title">Start a new lesson</h2>
-        <p className="new-lesson-subtitle">
-          Tell the tutor what you want to learn today.
-        </p>
+    <div className="page-start">
+      <section className="start-hero">
+        <div className="start-hero-text">
+          <h1 className="start-headline">What would you like to learn today?</h1>
+          <p className="start-subtitle">
+            Every master was once a beginner. Pick a topic and let&apos;s start!
+          </p>
+        </div>
+        <div className="start-hero-visual" aria-hidden="true">
+          <span className="material-symbols-outlined">school</span>
+        </div>
+      </section>
 
-        {error && <p className="error">{error}</p>}
+      <p className="section-label">Primary Subjects</p>
+      <div className="subject-row">
+        <div className="subject-card is-active">
+          <span className="material-symbols-outlined">calculate</span>
+          Math
+        </div>
+        <span className="subject-note">More subjects coming later</span>
+      </div>
 
-        <label className="new-lesson-label">
-          Subject
-          <select
-            value={subject}
-            onChange={(e) => setSubject(e.target.value as Subject)}
-          >
-            <option value="math">Math</option>
-            <option value="english">English</option>
-          </select>
-        </label>
+      <p className="section-label">Math Topics</p>
+      <div className="topic-grid">
+        {MATH_CURRICULUM.map((topic) => {
+          const selected = topic.id === selectedTopic;
+          return (
+            <button
+              key={topic.id}
+              type="button"
+              className={`topic-card pressable-button${selected ? " selected" : ""}`}
+              aria-pressed={selected}
+              onClick={() => setSelectedTopic(topic.id)}
+            >
+              <span className="topic-card-icon">
+                <span className="material-symbols-outlined">{topic.icon}</span>
+              </span>
+              <span className="topic-card-title">{topic.title}</span>
+              <span className="topic-card-desc">{topic.description}</span>
+            </button>
+          );
+        })}
+      </div>
 
-        <label className="new-lesson-label">
-          Topic
-          <input
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g. Adding fractions"
-            required
-          />
-        </label>
-
-        <label className="new-lesson-label">
-          What do you want to learn?
-          <textarea
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder="e.g. I want to be able to add fractions with different denominators"
-            required
-          />
-        </label>
-
-        <button className="new-lesson-submit" type="submit" disabled={busy}>
-          {busy ? "Starting lesson…" : "Start lesson"}
+      <div className="start-banner">
+        <div className="start-banner-text">
+          <h3>Ready to learn?</h3>
+          <p>Pick a topic above, then choose exactly what you want to practice.</p>
+        </div>
+        <button
+          type="button"
+          className="primary-button pressable-button"
+          disabled={!selectedTopic}
+          onClick={startLesson}
+        >
+          Start Lesson
+          <span className="material-symbols-outlined">rocket_launch</span>
         </button>
-      </form>
+      </div>
     </div>
   );
 }

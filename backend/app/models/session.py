@@ -15,6 +15,7 @@ class LessonSession(Base):
     )
     subject = Column(String, nullable=False)  # math or english
     topic = Column(String, nullable=False)
+    subtopic = Column(String, nullable=False)  # precise lesson focus (mandatory)
     goal_text = Column(String, nullable=False)
     status = Column(String, nullable=False, default=SessionStatus.ACTIVE.value)  # lifecycle
     phase = Column(String, nullable=False, default=LessonPhase.TEACHING.value)  # pedagogical phase

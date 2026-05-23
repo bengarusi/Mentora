@@ -14,13 +14,18 @@ function normalizeLatex(text: string): string {
 
 // Memoized: markdown + KaTeX parsing is expensive, so only re-parse when the
 // content string actually changes (not on every parent/list re-render).
-export const RichText = memo(function RichText({ content }: { content: string }) {
+export const RichText = memo(function RichText({
+  content,
+  className = "rich-text",
+}: {
+  content: string;
+  className?: string;
+}) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkMath]}
-      rehypePlugins={[rehypeKatex]}
-    >
-      {normalizeLatex(content)}
-    </ReactMarkdown>
+    <div className={className}>
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+        {normalizeLatex(content)}
+      </ReactMarkdown>
+    </div>
   );
 });
