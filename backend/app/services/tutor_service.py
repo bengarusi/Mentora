@@ -1,4 +1,9 @@
+import base64
+import concurrent.futures
+import json
 import logging
+import threading
+import time
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -30,8 +35,17 @@ from app.schemas.practice import (
 )
 from app.schemas.session import SessionCreate
 from app.schemas.tutor import PhaseResult, TurnResult
+from app.services.speech_chunker import SpeechChunker
+from app.services.voice_service import VoiceService, VoiceServiceError
 
 log = logging.getLogger("app.services.tutor_service")
+
+# Max TTS jobs running at once during a speech-stream turn. Set to 1 for a fully
+# sequential fallback (same code path). Audio is always emitted in chunk order,
+# and text streaming is never blocked waiting on a TTS job.
+MAX_CONCURRENT_TTS = 2
+# Transport slice size for audio_delta events (the frontend reassembles per chunk_id).
+_AUDIO_DELTA_BYTES = 32 * 1024
 
 
 class TutorService:
@@ -171,6 +185,166 @@ class TutorService:
             if full:
                 ctx.save_tutor_message_to_db(full)
             self.db.commit()
+
+        return generate()
+
+    # ---- streaming chat turn with low-latency speech (NDJSON: text + audio) ----
+
+    def stream_student_message_with_speech(
+        self, session_id: int, text: str, voice: VoiceService
+    ) -> Iterator[str]:
+        """Stream the tutor reply as NDJSON events carrying both text deltas and
+        per-chunk TTS audio, so the tutor starts speaking after the first short
+        phrase instead of the whole reply.
+
+        Setup (phase check, staging the student message, verdict) runs eagerly so
+        a wrong phase becomes a clean 409 before the stream starts. Both messages
+        are committed atomically once the stream completes; a dropped/aborted
+        stream commits nothing, leaving no orphaned student message.
+
+        Text streaming has absolute priority: TTS jobs run on a small thread pool
+        and their audio is emitted strictly in chunk order, but futures are only
+        drained non-blockingly between text deltas — block-waiting happens only
+        after the LLM stream is finished. A TTS failure for one chunk never aborts
+        the text stream."""
+        session = self._get_session(session_id)
+        ctx = self._build_ctx(session)
+        if not isinstance(ctx.state, _ConversationalState):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "You can only chat during the teaching or summary phase.",
+            )
+
+        ctx.save_student_message_to_db(text)
+        self.db.flush()  # visible to the history query below, not yet committed
+        tutor_ctx = ctx.build_tutor_context()
+        annotated = _annotate_math(text)
+        verdict = (
+            verify_chat_answer(tutor_ctx.recent_messages, text, self.llm)
+            if isinstance(ctx.state, TeachingState)
+            else None
+        )
+
+        def generate() -> Iterator[str]:
+            turn_start = time.perf_counter()
+            timing: dict[str, float] = {}
+            timing_lock = threading.Lock()
+
+            def mark(name: str) -> None:
+                # Metadata-only latency capture; safe to call from worker threads.
+                with timing_lock:
+                    if name not in timing:
+                        timing[name] = (time.perf_counter() - turn_start) * 1000
+
+            def ndjson(obj: dict) -> str:
+                return json.dumps(obj, ensure_ascii=False) + "\n"
+
+            def render_chunk_audio(chunk_text: str) -> bytes | None:
+                # Runs on a worker thread: network TTS only, never touches the DB.
+                mark("first_tts_request_started")
+                try:
+                    parts: list[bytes] = []
+                    for b in voice.iter_speech_audio(chunk_text):
+                        if b:
+                            mark("first_audio_byte_received")
+                            parts.append(b)
+                    return b"".join(parts) if parts else None
+                except VoiceServiceError:
+                    log.warning(
+                        "tts chunk failed in speech-stream session_id=%s", session_id
+                    )
+                    return None
+
+            def emit_chunk(chunk_id: int, audio: bytes | None) -> Iterator[str]:
+                if not audio:
+                    return  # TTS failed or produced nothing — text already streamed
+                mark("first_audio_delta_sent")
+                yield ndjson({"type": "audio_start", "chunk_id": chunk_id})
+                for i in range(0, len(audio), _AUDIO_DELTA_BYTES):
+                    b64 = base64.b64encode(audio[i : i + _AUDIO_DELTA_BYTES]).decode("ascii")
+                    yield ndjson(
+                        {"type": "audio_delta", "chunk_id": chunk_id, "data": b64}
+                    )
+                yield ndjson({"type": "audio_end", "chunk_id": chunk_id})
+
+            chunker = SpeechChunker()
+            chunks_full: list[str] = []
+            pending: list[concurrent.futures.Future] = []
+            submitted = 0  # chunks sent to TTS (incl. ones that produced no audio)
+            audio_seq = 0  # contiguous id sent to the client, only for real audio
+            any_tts_failed = False
+            executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=MAX_CONCURRENT_TTS
+            )
+            try:
+                # Open/flush the response immediately so the client confirms the
+                # stream is live before the LLM's first token arrives. Unknown to
+                # older clients — the frontend ignores event types it doesn't know.
+                yield ndjson({"type": "stream_start"})
+                for delta in self.llm.chat_reply_stream(
+                    tutor_ctx, annotated, verification=verdict
+                ):
+                    chunks_full.append(delta)
+                    mark("first_text_delta_sent")
+                    yield ndjson({"type": "text_delta", "data": delta})
+                    for ready in chunker.add(delta):
+                        mark("first_tts_chunk_created")
+                        submitted += 1
+                        pending.append(executor.submit(render_chunk_audio, ready))
+                    # Non-blocking, in-order drain: emit only already-finished audio
+                    # from the front of the queue. Never wait while text may flow.
+                    while pending and pending[0].done():
+                        audio = pending.pop(0).result()
+                        if audio is None:
+                            any_tts_failed = True
+                            continue
+                        audio_seq += 1  # contiguous → no gaps for the client
+                        for line in emit_chunk(audio_seq, audio):
+                            yield line
+
+                # LLM stream finished — now it's safe to block on remaining audio.
+                last = chunker.flush()
+                if last:
+                    mark("first_tts_chunk_created")
+                    submitted += 1
+                    pending.append(executor.submit(render_chunk_audio, last))
+                for fut in pending:
+                    audio = fut.result()
+                    if audio is None:
+                        any_tts_failed = True
+                        continue
+                    audio_seq += 1
+                    for line in emit_chunk(audio_seq, audio):
+                        yield line
+                pending.clear()
+
+                full = "".join(chunks_full).strip()
+                if full:
+                    ctx.save_tutor_message_to_db(full)
+                self.db.commit()
+                mark("stream_done")
+                log.info(
+                    "speech-stream done session_id=%s total_chunks=%d "
+                    "total_audio_chunks=%d any_tts_failed=%s timing_ms=%s",
+                    session_id,
+                    submitted,
+                    audio_seq,
+                    any_tts_failed,
+                    {k: round(v, 1) for k, v in timing.items()},
+                )
+                yield ndjson({"type": "done"})
+            except LLMError as exc:
+                self.db.rollback()
+                log.error(
+                    "speech-stream llm error session_id=%s error=%s", session_id, exc
+                )
+                yield ndjson({"type": "error", "message": "Tutor service unavailable."})
+            except Exception as exc:  # noqa: BLE001 - surface a clean event, not a 500
+                self.db.rollback()
+                log.error("speech-stream failed session_id=%s error=%s", session_id, exc)
+                yield ndjson({"type": "error", "message": "Something went wrong."})
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 
         return generate()
 

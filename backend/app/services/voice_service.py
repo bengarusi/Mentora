@@ -5,6 +5,7 @@ import io
 import logging
 import re
 import time
+from collections.abc import Iterator
 
 from openai import OpenAI
 
@@ -120,3 +121,43 @@ class VoiceService:
             len(audio_bytes),
         )
         return encoded
+
+    def iter_speech_audio(self, text: str) -> Iterator[bytes]:
+        """Stream tutor text to speech, yielding raw mp3 byte chunks as they arrive.
+
+        Mirrors synthesize_speech but uses OpenAI's streaming response so the first
+        bytes can be forwarded before the whole clip is rendered — the low-latency
+        path used by the speech-stream tutor turn. Yields nothing if the cleaned
+        text is empty. Errors are normalized to VoiceServiceError."""
+        spoken = self._clean_for_speech(text)
+        if not spoken:
+            return
+        start = time.perf_counter()
+        total = 0
+        try:
+            with self.client.audio.speech.with_streaming_response.create(
+                model=self.tts_model,
+                voice=self.tts_voice,
+                input=spoken,
+                response_format="mp3",
+            ) as response:
+                for chunk in response.iter_bytes(chunk_size=4096):
+                    if chunk:
+                        total += len(chunk)
+                        yield chunk
+        except Exception as exc:  # noqa: BLE001 - normalize SDK/network errors
+            log.error(
+                "tts stream failed model=%s text_chars=%d error=%s",
+                self.tts_model,
+                len(text),
+                exc,
+            )
+            raise VoiceServiceError(str(exc)) from exc
+        log.info(
+            "tts stream ok model=%s voice=%s text_chars=%d duration_ms=%.1f audio_bytes=%d",
+            self.tts_model,
+            self.tts_voice,
+            len(text),
+            (time.perf_counter() - start) * 1000,
+            total,
+        )

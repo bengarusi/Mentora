@@ -50,6 +50,87 @@ export async function streamTurn(
   }
 }
 
+// Handlers for the low-latency speech-stream turn (NDJSON: text + audio events).
+export interface SpeechStreamHandlers {
+  onTextDelta: (delta: string) => void;
+  onAudioStart?: (chunkId: number) => void;
+  onAudioChunk: (chunkId: number, bytes: Uint8Array) => void;
+  onAudioEnd: (chunkId: number) => void;
+  onDone?: () => void;
+  onError?: (message: string) => void;
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+// Stream tutor text + per-chunk TTS audio over a single NDJSON response. Uses
+// fetch (not axios) so the response body can be read incrementally. Pass an
+// AbortSignal to support barge-in (cancelling the in-flight turn).
+export async function streamSpeechTurn(
+  sessionId: number,
+  content: string,
+  handlers: SpeechStreamHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`/api/tutor/${sessionId}/turn/speech-stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ content }),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Speech stream failed: ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      const evt = JSON.parse(line) as {
+        type: string;
+        data?: string;
+        chunk_id?: number;
+        message?: string;
+      };
+      switch (evt.type) {
+        case "text_delta":
+          handlers.onTextDelta(evt.data ?? "");
+          break;
+        case "audio_start":
+          handlers.onAudioStart?.(evt.chunk_id ?? 0);
+          break;
+        case "audio_delta":
+          handlers.onAudioChunk(evt.chunk_id ?? 0, base64ToBytes(evt.data ?? ""));
+          break;
+        case "audio_end":
+          handlers.onAudioEnd(evt.chunk_id ?? 0);
+          break;
+        case "done":
+          handlers.onDone?.();
+          break;
+        case "error":
+          handlers.onError?.(evt.message ?? "Unknown error");
+          break;
+      }
+    }
+  }
+}
+
 export async function speakTutorMessage(
   sessionId: number,
   text: string

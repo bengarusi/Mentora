@@ -55,6 +55,25 @@ def stream_student_message_and_get_tutor_reply(
     )
 
 
+@router.post("/{session_id}/turn/speech-stream")
+def stream_student_message_with_speech(
+    session_id: int,
+    body: TurnRequest,
+    tutor: TutorService = Depends(get_tutor_service),
+    voice: VoiceService = Depends(get_voice_service),
+):
+    """Low-latency turn: stream tutor text deltas AND per-chunk TTS audio as a
+    single NDJSON response so speech starts after the first short phrase."""
+    generator = tutor.stream_student_message_with_speech(
+        session_id, body.content, voice
+    )
+    return StreamingResponse(
+        generator,
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # TTS: convert any tutor text reply to speech (used by the typed-chat flow
 # so the student hears every tutor message, not just voice-turn replies)
