@@ -10,8 +10,10 @@ from app.lesson.context import LessonContext
 from app.lesson.state import (
     InvalidLessonAction,
     PracticeState,
+    TeachingState,
     _ConversationalState,
     _annotate_math,
+    verify_chat_answer,
 )
 from app.llm.provider import LLMError, LLMProvider
 from app.models.session import LessonSession
@@ -143,10 +145,19 @@ class TutorService:
         self.db.flush()  # visible to the history query below, not yet committed
         tutor_ctx = ctx.build_tutor_context()
         annotated = _annotate_math(text)
+        # Only grade during teaching (where the tutor asks interactive questions),
+        # not during the summary chat.
+        verdict = (
+            verify_chat_answer(tutor_ctx.recent_messages, text, self.llm)
+            if isinstance(ctx.state, TeachingState)
+            else None
+        )
 
         def generate() -> Iterator[str]:
             chunks: list[str] = []
-            for delta in self.llm.chat_reply_stream(tutor_ctx, annotated):
+            for delta in self.llm.chat_reply_stream(
+                tutor_ctx, annotated, verification=verdict
+            ):
                 chunks.append(delta)
                 yield delta
             full = "".join(chunks).strip()

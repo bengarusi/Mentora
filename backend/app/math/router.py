@@ -123,6 +123,56 @@ class MathRouterService:
         )
 
     # ------------------------------------------------------------------
+    # Free-form chat answer verification (teaching phase)
+    # ------------------------------------------------------------------
+
+    def verify_chat_answer(
+        self, question_text: str, student_answer: str
+    ) -> ToolResult:
+        """
+        Deterministically grade a free-form chat answer against an arithmetic
+        question the tutor asked in prose, in English or Hebrew, e.g.
+        "What is 3 times 6?", "כמה זה 12 חלקי 4?", "What is 25% of 40?".
+
+        Covers the four operations, decimals, simple fractions and percentages.
+        Skips classify() (the tutor's message is often several noisy sentences,
+        which confuses the keyword classifier) and instead pulls the arithmetic
+        expression straight out of the text and evaluates it exactly.
+
+        Returns is_equivalent True/False only when it can SAFELY compute the
+        answer. For anything else — non-numeric student answers, place-value /
+        comparison / "which digit" style questions, or text with no extractable
+        expression — it returns is_equivalent=None so the caller falls back to
+        the LLM grader (never a guessed verdict).
+        """
+        none = ToolResult(success=False, tool_used="chat_arithmetic", is_equivalent=None)
+
+        student_frac = parse_to_fraction(student_answer.strip())
+        if student_frac is None:
+            return none
+
+        # Abstain on questions whose answer is NOT the value of the embedded
+        # expression (e.g. "numerator of 3/4", "which is bigger 1/2 or 1/3",
+        # place value). Computing those would produce a wrong verdict.
+        if _has_non_computational_intent(question_text):
+            return none
+
+        expr = _extract_chat_expression(question_text)
+        if expr is None:
+            return none
+
+        computed = _basic_calc.evaluate(expr)
+        if computed is None:
+            return none
+
+        return ToolResult(
+            success=True,
+            tool_used="chat_arithmetic",
+            canonical_answer=canonical_fraction_str(computed),
+            is_equivalent=(student_frac == computed),
+        )
+
+    # ------------------------------------------------------------------
     # Question-answer verification (during question generation)
     # ------------------------------------------------------------------
 
@@ -204,17 +254,103 @@ class MathRouterService:
 # Expression / equation extraction helpers
 # ---------------------------------------------------------------------------
 
+# Word/symbol forms of operators, so questions phrased in prose ("3 times 6",
+# "3 כפול 6") are parseable. Longer phrases first so "multiplied by" wins over a
+# bare "times". Covers English and Hebrew.
+_WORD_OPERATORS = (
+    (r"\bmultiplied\s+by\b", " * "),
+    (r"\bdivided\s+by\b", " / "),
+    (r"\btimes\b", " * "),
+    (r"\bplus\b", " + "),
+    (r"\bminus\b", " - "),
+    # Hebrew
+    (r"כפול", " * "),
+    (r"מחולק\s*ב", " / "),
+    (r"חלקי", " / "),
+    (r"ועוד", " + "),
+    (r"פלוס", " + "),
+    (r"פחות", " - "),
+    (r"מחוסר", " - "),
+)
+
+# Unicode math symbols → ASCII operators.
+_SYMBOL_MAP = str.maketrans({"×": "*", "✕": "*", "·": "*", "∙": "*", "÷": "/", "−": "-"})
+
+# Phrases meaning "percent of" → "/100*" so "25% of 40" becomes "25/100*40".
+_PERCENT_OF = (
+    r"%\s*of",
+    r"percent\s*of",
+    r"%\s*(?:מ-?|מתוך)",
+    r"אחוז\s*(?:מ-?|מתוך)",
+)
+
+# Keywords whose answer is NOT the numeric value of an embedded expression.
+# When present we abstain (return None) and let the LLM grade, so we never emit
+# a wrong deterministic verdict. English + Hebrew.
+_NON_COMPUTATIONAL_KEYWORDS = (
+    "numerator", "denominator", "digit", "place value", "value of",
+    "round", "nearest", "estimate",
+    "bigger", "biggest", "smaller", "smallest", "greater", "greatest",
+    "larger", "largest", "less than", "more than", "compare", "order",
+    "arrange", "ascending", "descending", "between", "how many digits",
+    "מונה", "מכנה", "ספרה", "ספרות", "ערך המקום", "ערך של", "עיגול",
+    "עגל", "לעגל", "גדול", "קטן", "השווה", "השוו", "סדר", "סדרו",
+    "אחדות", "עשרות", "מאות", "אלפים",
+)
+
+
+def _normalize_math_text(text: str) -> str:
+    """Lowercase, map symbols/words to ASCII operators, expand "percent of"."""
+    out = text.lower().translate(_SYMBOL_MAP)
+    for pattern in _PERCENT_OF:
+        out = re.sub(pattern, " /100* ", out)
+    for pattern, symbol in _WORD_OPERATORS:
+        out = re.sub(pattern, symbol, out)
+    return out
+
+
+def _has_non_computational_intent(text: str) -> bool:
+    low = text.lower()
+    return any(kw in low for kw in _NON_COMPUTATIONAL_KEYWORDS)
+
+
+# A number is an integer, decimal, or fraction (a/b). Two or more numbers joined
+# by + - * / form an expression. The LAST such expression in the text is taken —
+# the asked question comes last, examples and intermediate steps come first.
+_CHAT_EXPR_RE = re.compile(
+    r"\d+(?:\.\d+)?(?:\s*/\s*\d+)?(?:\s*[+\-*/]\s*\d+(?:\.\d+)?(?:\s*/\s*\d+)?)+"
+)
+
+
+def _extract_chat_expression(text: str) -> str | None:
+    normalized = _normalize_math_text(text)
+    matches = _CHAT_EXPR_RE.findall(normalized)
+    return matches[-1].strip() if matches else None
+
+
+def _normalize_word_operators(text: str) -> str:
+    out = text.lower()
+    for pattern, symbol in _WORD_OPERATORS:
+        out = re.sub(pattern, symbol, out)
+    return out
+
+
 def _extract_arithmetic_expression(text: str) -> str | None:
     """
     Extract a simple arithmetic expression from question text.
-    e.g. "What is 2/5 + 1/10?" → "2/5 + 1/10"
+    e.g. "What is 2/5 + 1/10?" → "2/5 + 1/10", "What is 3 times 6?" → "3 * 6"
+
+    When the text holds several expressions (e.g. a worked example followed by
+    the question), the LAST one is returned — the asked question comes last,
+    while examples and intermediate steps come first.
     """
+    normalized = _normalize_word_operators(text)
     # Match expressions like "a/b + c/d", "3 * 4", "12 - 1/3 * 12", etc.
     pattern = re.compile(
         r"([\d]+(?:\s*/\s*[\d]+)?(?:\s*[\+\-\*]\s*[\d]+(?:\s*/\s*[\d]+)?)+)"
     )
-    match = pattern.search(text)
-    return match.group(0).strip() if match else None
+    matches = pattern.findall(normalized)
+    return matches[-1].strip() if matches else None
 
 
 def _extract_equation(text: str) -> str | None:

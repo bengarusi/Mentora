@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.math.schemas import ToolResult
 
-from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
+from app.schemas.tutor import ChatAnswerGrade, GeneratedPracticeQuestion, GradedAnswer
 
 
 class LLMError(Exception):
@@ -37,14 +37,31 @@ class LLMProvider(ABC):
         """Open the teaching phase: explain the topic with examples and invite questions."""
 
     @abstractmethod
-    def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
-        """Respond to one student message during the teaching or summary phase."""
+    def chat_reply(
+        self,
+        ctx: TutorContext,
+        student_message: str,
+        *,
+        verification: "ToolResult | None" = None,
+    ) -> str:
+        """Respond to one student message during the teaching or summary phase.
+
+        When *verification* carries a definitive is_equivalent verdict, the LLM
+        must obey it instead of grading the student's answer itself.
+        """
 
     @abstractmethod
     def chat_reply_stream(
-        self, ctx: TutorContext, student_message: str
+        self,
+        ctx: TutorContext,
+        student_message: str,
+        *,
+        verification: "ToolResult | None" = None,
     ) -> Iterator[str]:
-        """Stream the reply for one student message as text deltas."""
+        """Stream the reply for one student message as text deltas.
+
+        *verification* has the same authoritative meaning as in chat_reply.
+        """
 
     @abstractmethod
     def generate_pre_practice_example(self, ctx: TutorContext) -> str:
@@ -69,6 +86,16 @@ class LLMProvider(ABC):
 
         When *tool_result* carries a definitive is_equivalent verdict, the LLM
         must use that verdict for is_correct and only generate aligned feedback.
+        """
+
+    @abstractmethod
+    def grade_chat_answer(
+        self, question_text: str, student_answer: str
+    ) -> ChatAnswerGrade:
+        """Grade a teaching-chat answer in isolation (question + answer only).
+
+        Used when the deterministic math tool can't decide. is_correct is None
+        when the student's message isn't an answer to grade.
         """
 
     @abstractmethod

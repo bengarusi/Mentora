@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from app.core.enums import LessonPhase, SuccessLevel
+from app.llm.provider import LLMError
 from app.math.router import MathRouterService
 from app.math.schemas import ToolResult
 from app.models.assessment import AssessmentQuestion
@@ -14,6 +15,7 @@ from app.schemas.tutor import GradedAnswer
 
 if TYPE_CHECKING:
     from app.lesson.context import LessonContext
+    from app.llm.provider import LLMProvider
 
 log = logging.getLogger(__name__)
 _math_router = MathRouterService()
@@ -72,6 +74,23 @@ class TeachingState(_ConversationalState):
         text = ctx.llm.generate_teaching_intro(ctx.build_tutor_context())
         ctx.save_tutor_message_to_db(text)
         return text
+
+    def generate_reply_to_student_message(
+        self, ctx: "LessonContext", text: str
+    ) -> str:
+        ctx.save_student_message_to_db(text)
+        tutor_ctx = ctx.build_tutor_context()
+        # Grade the student's answer to the question the tutor just asked, then
+        # lock that verdict into the reply prompt — the chat LLM invents the
+        # question and can't be trusted to grade its own answer (it marked a
+        # correct answer wrong repeatedly). The math tool decides arithmetic;
+        # an isolated grading call handles everything it can't compute.
+        verdict = verify_chat_answer(tutor_ctx.recent_messages, text, ctx.llm)
+        reply = ctx.llm.chat_reply(
+            tutor_ctx, _annotate_math(text), verification=verdict
+        )
+        ctx.save_tutor_message_to_db(reply)
+        return reply
 
     def get_next_phase_state(self, ctx: "LessonContext") -> "LessonState":
         return PrePracticeExampleState()
@@ -375,6 +394,73 @@ class CompletedState(LessonState):
 def _correct_feedback() -> str:
     """Templated praise for a correct answer — used instead of an LLM call."""
     return "Correct! Nice work."
+
+
+def verify_chat_answer(
+    recent_messages: list[tuple[str, str]],
+    student_text: str,
+    llm: "LLMProvider",
+) -> ToolResult | None:
+    """Grade a teaching-chat answer against the question the tutor just asked,
+    returning an authoritative verdict (ToolResult with is_equivalent set) the
+    reply prompt must obey — or None to let the tutor reply normally.
+
+    Two-stage, "tool first, LLM second":
+      1. The deterministic math tool decides arithmetic / fractions / decimals /
+         percentages with certainty.
+      2. When the tool abstains (place value, comparisons, word problems, prose
+         or Hebrew questions it can't compute), an ISOLATED grading call — which
+         sees only the question and answer, not the conversation — decides. That
+         isolation is what fixes the original bug: the in-conversation model got
+         stuck repeating a wrong verdict it had already given.
+
+    recent_messages is (role, content) oldest→newest and already includes the
+    student's just-saved message, so the question is the most recent tutor turn.
+    """
+    from app.core.enums import MessageRole
+
+    last_question = next(
+        (
+            content
+            for role, content in reversed(recent_messages)
+            if role == MessageRole.TUTOR.value
+        ),
+        None,
+    )
+    if not last_question or not _looks_like_answer(last_question, student_text):
+        return None
+
+    # 1. Deterministic — exact and instant where it applies.
+    result = _math_router.verify_chat_answer(last_question, student_text)
+    if result.is_equivalent is not None:
+        return result
+
+    # 2. Isolated LLM grade — general coverage for everything the tool can't compute.
+    try:
+        grade = llm.grade_chat_answer(last_question, student_text)
+    except LLMError:
+        return None  # grading is best-effort; never block the reply
+    if grade.is_correct is None:
+        return None
+    return ToolResult(
+        success=True,
+        tool_used="chat_llm_grade",
+        canonical_answer=grade.correct_answer,
+        is_equivalent=grade.is_correct,
+    )
+
+
+def _looks_like_answer(question: str, student_text: str) -> bool:
+    """Cheap guard so we only grade actual answers — not the student asking
+    their own question, and not chit-chat after a tutor turn that asked nothing."""
+    from app.math.normalizer import parse_to_fraction
+
+    s = student_text.strip()
+    if not s or s.endswith("?"):
+        return False
+    if "?" in question:
+        return True
+    return parse_to_fraction(s) is not None
 
 
 def _annotate_math(text: str) -> str:

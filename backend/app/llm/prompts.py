@@ -84,12 +84,47 @@ def teaching_intro_prompt(ctx: TutorContext) -> tuple[str, str]:
     return system, user
 
 
-def chat_prompt(ctx: TutorContext, student_message: str) -> tuple[str, str]:
+def _chat_verification_block(verification: "ToolResult | None") -> str:
+    """A locked verdict the LLM must obey when the deterministic math checker
+    could grade the student's answer. Mirrors the practice-flow guarantee that
+    the LLM never owns is_correct for an answer the tool can decide."""
+    if verification is None or verification.is_equivalent is None:
+        return ""
+
+    if verification.is_equivalent:
+        return (
+            "\n\nDETERMINISTIC CHECK (authoritative — you MUST obey it):\n"
+            "A math validator confirmed the student's latest answer is CORRECT.\n"
+            "You MUST treat it as correct: briefly celebrate and move on to the "
+            "next small question. Do NOT say it is wrong, 'not quite', or 'close', "
+            "and do NOT re-grade it yourself.\n"
+        )
+    return (
+        "\n\nDETERMINISTIC CHECK (authoritative — you MUST obey it):\n"
+        "A math validator confirmed the student's latest answer is INCORRECT"
+        + (
+            f" (the correct answer is {verification.canonical_answer})"
+            if verification.canonical_answer
+            else ""
+        )
+        + ".\n"
+        "You MUST treat it as wrong: give one gentle hint and ask them to try "
+        "again. Do NOT tell the student it is correct.\n"
+    )
+
+
+def chat_prompt(
+    ctx: TutorContext,
+    student_message: str,
+    *,
+    verification: "ToolResult | None" = None,
+) -> tuple[str, str]:
     system = _persona(ctx)
 
     user = (
         f"{_history(ctx)}\n\n"
-        f"The student says: \"{student_message}\"\n\n"
+        f"The student says: \"{student_message}\"\n"
+        f"{_chat_verification_block(verification)}\n"
 
         "You are in the TEACHING phase (ongoing conversation).\n\n"
 
@@ -237,6 +272,48 @@ def practice_questions_prompt(ctx: TutorContext, set_number: int) -> tuple[str, 
         + _history(ctx)
     )
 
+    return system, user
+
+
+# ---------------------------------------------------------------------------
+# Isolated teaching-chat grading (no conversation history)
+# ---------------------------------------------------------------------------
+
+def chat_grade_prompt(question_text: str, student_answer: str) -> tuple[str, str]:
+    """Grade a teaching-chat answer in isolation — the grader sees ONLY the
+    question and the answer, never the back-and-forth. This avoids the failure
+    mode where the model gets locked into a wrong verdict it gave earlier in the
+    conversation. Used when the deterministic math tool can't decide (place
+    value, comparisons, word problems, prose / Hebrew questions, etc.)."""
+    system = (
+        "You are a precise math grader for a child's tutoring session.\n"
+        "You will see ONE question a tutor asked and the student's reply.\n\n"
+        "Process you MUST follow:\n"
+        "1. Solve the question yourself, step by step, to get the correct answer.\n"
+        "2. Compare the student's reply to that correct answer.\n"
+        "3. Accept ANY mathematically equivalent form (e.g. 1/2 = 2/4 = 0.5 = 50%).\n\n"
+        "The question may be in English or Hebrew. It may be about place value, "
+        "comparisons, rounding, fractions, decimals, percentages, or word problems.\n\n"
+        "If the student's reply is NOT an attempt to answer the question "
+        "(e.g. they asked their own question, said 'I don't know', or made a "
+        "comment), set is_correct to null.\n\n"
+        "Return ONLY valid JSON."
+    )
+    user = (
+        f"Question the tutor asked:\n{question_text}\n\n"
+        f"Student's reply:\n{student_answer}\n\n"
+        "Return ONLY valid JSON in this exact format:\n"
+        "{\n"
+        '  "correct_answer": "the correct answer you computed",\n'
+        '  "is_correct": true\n'
+        "}\n\n"
+        "Rules:\n"
+        "- is_correct: true if the reply is mathematically equivalent to the "
+        "correct answer, false if it is a wrong answer, null if it is not an "
+        "answer at all.\n"
+        "- correct_answer: your computed answer (a short value), or null if "
+        "is_correct is null."
+    )
     return system, user
 
 

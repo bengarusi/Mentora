@@ -7,7 +7,11 @@ if TYPE_CHECKING:
     from app.math.schemas import ToolResult
 
 from app.llm.provider import LLMProvider, TutorContext
-from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
+from app.schemas.tutor import (
+    ChatAnswerGrade,
+    GeneratedPracticeQuestion,
+    GradedAnswer,
+)
 
 
 class FakeLLMProvider(LLMProvider):
@@ -20,13 +24,28 @@ class FakeLLMProvider(LLMProvider):
             f"Here is a quick example. Now, can you tell me: what is 1+1?"
         )
 
-    def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
+    def chat_reply(
+        self,
+        ctx: TutorContext,
+        student_message: str,
+        *,
+        verification: "ToolResult | None" = None,
+    ) -> str:
+        if verification is not None and verification.is_equivalent is not None:
+            verdict = "correct" if verification.is_equivalent else "incorrect"
+            return f"Reply to: {student_message} [verdict={verdict}]"
         return f"Reply to: {student_message}"
 
     def chat_reply_stream(
-        self, ctx: TutorContext, student_message: str
+        self,
+        ctx: TutorContext,
+        student_message: str,
+        *,
+        verification: "ToolResult | None" = None,
     ) -> Iterator[str]:
-        for word in self.chat_reply(ctx, student_message).split(" "):
+        for word in self.chat_reply(
+            ctx, student_message, verification=verification
+        ).split(" "):
             yield word + " "
 
     def generate_pre_practice_example(self, ctx: TutorContext) -> str:
@@ -74,6 +93,15 @@ class FakeLLMProvider(LLMProvider):
             is_correct=is_correct,
             feedback="Well done!" if is_correct else "Not quite, try again.",
         )
+
+    def grade_chat_answer(
+        self, question_text: str, student_answer: str
+    ) -> ChatAnswerGrade:
+        # Deterministic stub: treat a reply containing "right" as correct, else
+        # unknown. Real grading is exercised via the math tool in unit tests.
+        if "right" in student_answer.lower():
+            return ChatAnswerGrade(is_correct=True, correct_answer=student_answer)
+        return ChatAnswerGrade(is_correct=None, correct_answer=None)
 
     def generate_lesson_summary(
         self, ctx: TutorContext, total_correct: int, total_questions: int

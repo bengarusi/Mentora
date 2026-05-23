@@ -16,6 +16,14 @@ class GradedAnswer(BaseModel):
     feedback: str         # short, child-friendly sentence
 
 
+class ChatAnswerGrade(BaseModel):
+    """Verdict for a free-form teaching-chat answer, used to lock the tutor's
+    reply so it can't mark a correct answer wrong."""
+
+    is_correct: bool | None   # None = the message wasn't an answer / couldn't grade
+    correct_answer: str | None = None
+
+
 # ---- API request / response DTOs for the tutor flow ----
 
 class TurnRequest(BaseModel):

@@ -11,7 +11,7 @@ from openai import OpenAI
 from app.core.config import settings
 from app.llm import prompts
 from app.llm.provider import LLMError, LLMProvider, TutorContext
-from app.schemas.tutor import GeneratedPracticeQuestion, GradedAnswer
+from app.schemas.tutor import ChatAnswerGrade, GeneratedPracticeQuestion, GradedAnswer
 
 if TYPE_CHECKING:
     from app.math.schemas import ToolResult
@@ -88,18 +88,30 @@ class OpenAIProvider(LLMProvider):
             temperature=0.7,
         ).strip()
 
-    def chat_reply(self, ctx: TutorContext, student_message: str) -> str:
+    def chat_reply(
+        self,
+        ctx: TutorContext,
+        student_message: str,
+        *,
+        verification: "ToolResult | None" = None,
+    ) -> str:
         return self._call_llm(
-            *prompts.chat_prompt(ctx, student_message),
+            *prompts.chat_prompt(ctx, student_message, verification=verification),
             operation="chat_reply",
             max_tokens=400,
             temperature=0.6,
         ).strip()
 
     def chat_reply_stream(
-        self, ctx: TutorContext, student_message: str
+        self,
+        ctx: TutorContext,
+        student_message: str,
+        *,
+        verification: "ToolResult | None" = None,
     ) -> Iterator[str]:
-        system, user = prompts.chat_prompt(ctx, student_message)
+        system, user = prompts.chat_prompt(
+            ctx, student_message, verification=verification
+        )
         start = time.perf_counter()
         log.info("llm stream start op=chat_reply_stream model=%s", self.model)
         try:
@@ -190,6 +202,25 @@ class OpenAIProvider(LLMProvider):
             )
         except Exception as exc:
             raise LLMError(f"Could not parse grade JSON: {exc}") from exc
+
+    def grade_chat_answer(
+        self, question_text: str, student_answer: str
+    ) -> ChatAnswerGrade:
+        raw = self._call_llm(
+            *prompts.chat_grade_prompt(question_text, student_answer),
+            json_mode=True,
+            operation="chat_grade",
+            max_tokens=150,
+            temperature=0.0,
+        )
+        try:
+            data = json.loads(raw)
+            return ChatAnswerGrade(
+                is_correct=data.get("is_correct"),
+                correct_answer=data.get("correct_answer"),
+            )
+        except Exception as exc:
+            raise LLMError(f"Could not parse chat grade JSON: {exc}") from exc
 
     def generate_lesson_summary(
         self, ctx: TutorContext, total_correct: int, total_questions: int

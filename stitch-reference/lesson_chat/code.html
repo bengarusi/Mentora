@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mentora - Lesson Chat</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Quicksand -->
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-tint": "#6d3bd7",
+                    "tertiary-fixed": "#ffddb8",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb95f",
+                    "inverse-on-surface": "#eaf1ff",
+                    "outline-variant": "#cbc3d7",
+                    "surface-bright": "#f8f9ff",
+                    "on-tertiary-container": "#fffbff",
+                    "on-primary-fixed": "#23005c",
+                    "primary-fixed": "#e9ddff",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary": "#825100",
+                    "primary-fixed-dim": "#d0bcff",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#494454",
+                    "on-secondary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "tertiary-container": "#a36700",
+                    "surface-container": "#e5eeff",
+                    "on-tertiary-fixed": "#2a1700",
+                    "surface-dim": "#cbdbf5",
+                    "on-primary-fixed-variant": "#5516be",
+                    "on-secondary-container": "#00714d",
+                    "error-container": "#ffdad6",
+                    "inverse-surface": "#213145",
+                    "on-secondary-fixed-variant": "#005236",
+                    "surface-container-high": "#dce9ff",
+                    "on-background": "#0b1c30",
+                    "outline": "#7b7486",
+                    "secondary": "#006c49",
+                    "primary": "#6b38d4",
+                    "primary-container": "#8455ef",
+                    "surface-container-highest": "#d3e4fe",
+                    "surface": "#f8f9ff",
+                    "secondary-fixed-dim": "#4edea3",
+                    "on-error-container": "#93000a",
+                    "background": "#f8f9ff",
+                    "on-tertiary-fixed-variant": "#653e00",
+                    "secondary-fixed": "#6ffbbe",
+                    "secondary-container": "#6cf8bb",
+                    "on-secondary-fixed": "#002113",
+                    "on-primary": "#ffffff",
+                    "inverse-primary": "#d0bcff",
+                    "on-primary-container": "#fffbff",
+                    "on-surface": "#0b1c30",
+                    "surface-variant": "#d3e4fe",
+                    "surface-container-low": "#eff4ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "24px",
+                    "lg": "40px",
+                    "container-max": "1280px",
+                    "base": "8px",
+                    "xl": "64px",
+                    "md": "24px",
+                    "sm": "12px",
+                    "xs": "4px"
+            },
+            "fontFamily": {
+                    "display": ["Quicksand"],
+                    "body-md": ["Quicksand"],
+                    "headline-lg-mobile": ["Quicksand"],
+                    "headline-lg": ["Quicksand"],
+                    "label-lg": ["Quicksand"],
+                    "label-sm": ["Quicksand"],
+                    "headline-md": ["Quicksand"],
+                    "body-lg": ["Quicksand"]
+            },
+            "fontSize": {
+                    "display": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                    "label-lg": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.04em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-lg": ["20px", {"lineHeight": "30px", "fontWeight": "500"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .chat-bubble-shadow {
+            box-shadow: 0 4px 12px rgba(109, 59, 215, 0.08);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col overflow-hidden">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-gutter lg:px-xl py-xs bg-surface shadow-sm z-50 fixed top-0 left-0">
+<div class="flex items-center gap-sm">
+<span class="font-display text-headline-lg text-primary font-bold tracking-tight">Mentora</span>
+</div>
+<nav class="hidden md:flex items-center gap-xl">
+<a class="text-on-surface-variant font-medium hover:text-primary-container transition-colors" href="#">Home</a>
+<a class="text-on-surface-variant font-medium hover:text-primary-container transition-colors" href="#">Subjects</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1" href="#">Chat</a>
+<a class="text-on-surface-variant font-medium hover:text-primary-container transition-colors" href="#">Profile</a>
+</nav>
+<div class="flex items-center gap-md">
+<button class="flex items-center gap-xs text-primary font-semibold">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-label-lg text-label-lg">Progress Tracker</span>
+</button>
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary-container">
+<img alt="Student Profile" data-alt="A close-up high-quality 3D avatar of a friendly student character with a warm smile, wearing modern headphones. The lighting is soft and studio-quality, emphasizing a bright and welcoming educational environment. The background is a soft, out-of-focus lavender gradient, maintaining the professional and student-centric aesthetic of the Mentora brand." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBWZD0Qakx4g4B3J1W7mknl8E_IU1gzNagVchbt6FZ25vwFDr7fX1Xcz5ZDB1NrNfflLJzy3NuOllKZV6gs1ZVmT6BL1nhXL6G42VNNunvwv84Tw5W7wiUv6_YkE5eaG1c1CGy3TIuJM7OX3Z_8BqtZB52aKNq9CZfTKXBAJ7O7ydKTfkI9lhOyFE3RPFO698uwGBvydVdlM7dVtZWlLbJYrSKWavKPIlCzy4lyClxZIFr6kElHCAwi6vZYCWpQ9Xaj_c1BcCl_ACgZ"/>
+</div>
+</div>
+</header>
+<!-- Layout Container -->
+<main class="flex flex-1 pt-[64px] pb-[80px] h-screen overflow-hidden">
+<!-- Sidebar Navigation (Hidden on Mobile) -->
+<aside class="fixed left-0 top-0 h-full hidden lg:flex flex-col p-md z-40 w-72 bg-surface-container-low pt-[84px] shadow-lg">
+<div class="mb-lg">
+<h2 class="font-headline-md text-headline-md text-primary">Learning Path</h2>
+<p class="text-on-surface-variant">Grade 4 Math</p>
+</div>
+<nav class="space-y-xs flex-1">
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high rounded-xl px-md py-sm transition-all" href="#">
+<span class="material-symbols-outlined">school</span>
+<span>My Lessons</span>
+</a>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high rounded-xl px-md py-sm transition-all" href="#">
+<span class="material-symbols-outlined">edit_note</span>
+<span>Practice Room</span>
+</a>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high rounded-xl px-md py-sm transition-all" href="#">
+<span class="material-symbols-outlined">map</span>
+<span>Learning Journey</span>
+</a>
+<a class="flex items-center gap-sm text-on-surface-variant hover:bg-surface-container-high rounded-xl px-md py-sm transition-all" href="#">
+<span class="material-symbols-outlined">emoji_events</span>
+<span>Achievements</span>
+</a>
+</nav>
+<button class="mt-auto bg-primary-container text-on-primary-container py-md rounded-xl font-bold flex items-center justify-center gap-sm shadow-sm hover:scale-[0.98] transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                Ask AI Mentor
+            </button>
+</aside>
+<!-- Main Chat Area -->
+<section class="flex-1 flex flex-col relative lg:ml-72 transition-all">
+<div class="flex-1 overflow-y-auto px-gutter py-lg scrollbar-hide flex flex-col gap-lg">
+<!-- Tutor Message -->
+<div class="flex gap-md max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center flex-shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-on-primary-container">smart_toy</span>
+</div>
+<div class="bg-surface-container-lowest p-md rounded-xl rounded-tl-none border border-outline-variant chat-bubble-shadow">
+<h3 class="font-headline-md text-headline-md text-primary mb-xs">Understanding 1/2</h3>
+<p class="text-on-surface mb-md">Think of a fraction as a "part" of a whole. Imagine we have a big, delicious pepperoni pizza!</p>
+<div class="space-y-sm mb-md">
+<div class="flex items-start gap-sm">
+<span class="w-6 h-6 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+<p class="text-on-surface">The <strong>Denominator</strong> (bottom number) tells us how many total equal slices the pizza is cut into. In 1/2, that's 2 slices!</p>
+</div>
+<div class="flex items-start gap-sm">
+<span class="w-6 h-6 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+<p class="text-on-surface">The <strong>Numerator</strong> (top number) tells us how many of those slices you get to eat. In 1/2, you get 1 slice!</p>
+</div>
+</div>
+<div class="bg-secondary-container text-on-secondary-container p-md rounded-lg border-l-4 border-secondary flex gap-sm">
+<span class="material-symbols-outlined">lightbulb</span>
+<div>
+<p class="font-bold">Key Rule</p>
+<p class="text-label-lg">The larger the denominator, the smaller each individual slice becomes!</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Student Message -->
+<div class="flex gap-md max-w-md ml-auto flex-row-reverse animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 shadow-md">
+<span class="material-symbols-outlined text-white">person</span>
+</div>
+<div class="bg-primary text-white p-md rounded-xl rounded-tr-none shadow-lg">
+<p>That makes sense! So if it was 1/4, the slices would be smaller than 1/2?</p>
+</div>
+</div>
+<!-- Tutor Message 2 -->
+<div class="flex gap-md max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center flex-shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-on-primary-container">smart_toy</span>
+</div>
+<div class="bg-surface-container-lowest p-md rounded-xl rounded-tl-none border border-outline-variant chat-bubble-shadow">
+<p class="text-on-surface">Exactly! You're a natural at this. 🍕 If you share with 4 people, everyone gets a smaller piece than if you only share with 2.</p>
+<p class="mt-sm text-on-surface">Would you like to try a quick practice problem or see another example first?</p>
+</div>
+</div>
+</div>
+<!-- Input and Quick Actions Container -->
+<div class="p-gutter pt-0 bg-surface/80 backdrop-blur-md">
+<!-- Quick Action Pills -->
+<div class="flex gap-sm mb-sm overflow-x-auto scrollbar-hide py-xs">
+<button class="whitespace-nowrap px-md py-xs rounded-full border-2 border-primary-container text-primary font-bold hover:bg-primary-container hover:text-white transition-all text-label-lg">Explain again</button>
+<button class="whitespace-nowrap px-md py-xs rounded-full border-2 border-primary-container text-primary font-bold hover:bg-primary-container hover:text-white transition-all text-label-lg">Give me an example</button>
+<button class="whitespace-nowrap px-md py-xs rounded-full border-2 border-primary text-white bg-primary font-bold hover:brightness-110 transition-all text-label-lg shadow-sm">I’m ready to practice</button>
+</div>
+<!-- Chat Input Bar -->
+<div class="flex gap-sm items-center bg-white p-xs pr-md rounded-full shadow-lg border-2 border-outline-variant focus-within:border-primary transition-all">
+<button class="p-sm text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">add_circle</span>
+</button>
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-outline py-sm font-medium" placeholder="Type your message here..." type="text"/>
+<button class="bg-primary text-white px-xl py-sm rounded-full font-bold flex items-center gap-xs hover:brightness-110 active:scale-95 transition-all">
+<span>Send</span>
+<span class="material-symbols-outlined text-[20px]">send</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Right Sidebar: Progress Panel -->
+<aside class="w-80 border-l border-outline-variant hidden xl:flex flex-col p-gutter bg-surface-container">
+<div class="mb-lg">
+<h3 class="font-headline-md text-headline-md text-on-surface mb-md">Your Progress</h3>
+<!-- Topic Card -->
+<div class="bg-surface-container-lowest p-md rounded-xl shadow-sm mb-md border border-outline-variant">
+<div class="flex items-center gap-sm mb-sm">
+<div class="p-xs bg-tertiary-container rounded-lg text-on-tertiary-container">
+<span class="material-symbols-outlined">calculate</span>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wider">TOPIC</p>
+<p class="font-bold text-on-surface">Fractions</p>
+</div>
+</div>
+<div class="flex items-center gap-sm">
+<div class="p-xs bg-secondary-container rounded-lg text-on-secondary-container">
+<span class="material-symbols-outlined">flag</span>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wider">PHASE</p>
+<p class="font-bold text-on-surface">Introduction</p>
+</div>
+</div>
+</div>
+<!-- Progress Bar -->
+<div class="mb-lg">
+<div class="flex justify-between items-end mb-xs">
+<span class="font-bold text-on-surface">Topic Mastery</span>
+<span class="text-label-lg text-secondary font-bold">45%</span>
+</div>
+<div class="h-3 w-full bg-outline-variant rounded-full overflow-hidden">
+<div class="h-full bg-secondary rounded-full" style="width: 45%;"></div>
+</div>
+</div>
+<!-- Tip Box -->
+<div class="bg-primary-fixed p-md rounded-xl border-l-4 border-primary shadow-sm">
+<div class="flex items-center gap-xs mb-xs text-primary">
+<span class="material-symbols-outlined">tips_and_updates</span>
+<span class="font-bold">Mentor Tip</span>
+</div>
+<p class="text-label-lg text-on-primary-fixed-variant">Try drawing a circle and cutting it into 4 pieces. It helps you "see" the math!</p>
+</div>
+</div>
+<!-- Learning Visual -->
+<div class="mt-auto rounded-xl overflow-hidden shadow-md group relative">
+<img alt="Fraction Visualization" data-alt="A clean and vibrant 3D mathematical illustration showing a wooden toy pizza divided into equal fourths. The colors are bright and saturated, using Mentora's primary purple and secondary green. The lighting is crisp and cheerful, creating a tactile and friendly feel for a child learner. High-key lighting highlights the smooth textures and clear shapes against a soft blue background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuATs-ed3GcLs8cmICbcVCqmfpn0R1ST1f0NtCCoFdNEtjI8_pCP5yfgG92C8BeoRbrF_kEVzJjLczfAkdzrqHIRZTzts96FzoTS14XYwLh7dpCVqLbQjfeR8f8S8vSJRp0vmAACZoa4i9qCWXooPSXzwiIee-GN5nSxmgLI1hbdiAoU2ts5mDbDt8VO4tLDka_a12qCRgG47MCAf0eJbXllRAn_I0JgCBhaazNuNEcbd5iwHRVPhSIZ4SS7J33KxbUU2Zg-M-PUaVHv"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent flex items-end p-md">
+<p class="text-white text-label-sm font-medium">Visualizing 1/4 Slices</p>
+</div>
+</div>
+</aside>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 bg-surface border-t border-outline-variant rounded-t-xl shadow-lg">
+<a class="flex flex-col items-center justify-center text-on-surface-variant" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant" href="#">
+<span class="material-symbols-outlined">import_contacts</span>
+<span class="font-label-sm text-label-sm">Subjects</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-6 py-1" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="font-label-sm text-label-sm">Chat</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant" href="#">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-label-sm text-label-sm">Profile</span>
+</a>
+</nav>
+<script>
+        // Simple Interaction logic
+        const chatInput = document.querySelector('input');
+        const sendBtn = document.querySelector('button.bg-primary.text-white');
+
+        sendBtn.addEventListener('click', () => {
+            if (chatInput.value.trim() !== "") {
+                console.log("Sending message:", chatInput.value);
+                chatInput.value = "";
+                // Visual feedback for click
+                sendBtn.style.transform = "scale(0.95)";
+                setTimeout(() => sendBtn.style.transform = "scale(1)", 150);
+            }
+        });
+
+        // Add keydown listener for "Enter"
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendBtn.click();
+        });
+    </script>
+</body></html>
