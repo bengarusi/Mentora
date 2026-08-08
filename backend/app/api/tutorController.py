@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app.api.dependencies import get_tutor_service, get_voice_service
 from app.schemas.material import HomeworkSessionCreate
-from app.schemas.session import SessionResponse
+from app.schemas.session import SessionRename, SessionResponse
 from app.schemas.practice import (
     PracticeAnswersSubmit,
     PracticeStartResult,
@@ -202,6 +202,16 @@ def analyze_homework(
     """Have the tutor read the uploaded homework and open the conversation.
     Called again whenever the student adds another file."""
     return tutor.analyze_homework(session_id)
+
+
+@router.patch("/{session_id}/homework/rename", response_model=SessionResponse)
+def rename_homework_session(
+    session_id: int,
+    body: SessionRename,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """Let the student rename a Homework Help session from the Files page."""
+    return tutor.rename_homework_session(session_id, body.title)
 
 
 @router.get("/{session_id}/homework/progress", response_model=HomeworkProgress)

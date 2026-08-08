@@ -116,6 +116,18 @@ export async function listHomework(
   return data.materials;
 }
 
+/** Rename a Homework Help session, replacing its default "My homework" title. */
+export async function renameHomeworkSession(
+  sessionId: number,
+  title: string
+): Promise<Session> {
+  const { data } = await apiClient.patch<Session>(
+    `/tutor/${sessionId}/homework/rename`,
+    { title }
+  );
+  return data;
+}
+
 /** Ask the tutor to read the uploaded homework and open the conversation. */
 export async function analyzeHomework(sessionId: number): Promise<TurnResult> {
   const { data } = await apiClient.post<TurnResult>(

@@ -1955,31 +1955,6 @@ textarea {
   max-width: 62ch;
 }
 
-/* ---- topic tagging field ---- */
-.topic-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  max-width: 340px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--color-text);
-}
-.topic-field select {
-  padding: 0.65rem 0.8rem;
-  border-radius: var(--radius-md);
-  border: 2px solid var(--color-surface-high);
-  background: var(--color-surface);
-  font-family: var(--font-base);
-  font-size: 0.95rem;
-  color: var(--color-text);
-  font-weight: 500;
-}
-.topic-field select:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
 /* ---- dropzone ---- */
 .dropzone-wrap {
   display: flex;
@@ -2137,6 +2112,63 @@ textarea {
 }
 .link-button.danger {
   color: var(--color-error);
+}
+
+.material-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.material-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 1.1rem;
+  background: var(--color-surface);
+  border: 2px solid var(--color-surface-high);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  font-family: var(--font-base);
+  color: var(--color-text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.material-folder-row:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-card);
+}
+.material-folder-icon {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.material-folder-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.material-folder-count {
+  flex-shrink: 0;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-low);
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.material-folder-row > .material-symbols-outlined:last-child {
+  color: var(--color-muted);
+}
+.folder-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.25rem;
+}
+.folder-back .material-symbols-outlined {
+  font-size: 1.1rem;
 }
 
 /* ---- empty state ---- */
@@ -2304,6 +2336,31 @@ textarea {
 .homework-session-open:hover {
   background: none;
   color: var(--color-primary);
+}
+.homework-session-rename {
+  flex-shrink: 0;
+  background: none;
+  color: var(--color-muted);
+  padding: 0.2rem;
+}
+.homework-session-rename:hover {
+  background: none;
+  color: var(--color-primary);
+}
+.homework-session-rename .material-symbols-outlined,
+.homework-session-open .material-symbols-outlined {
+  font-size: 1.15rem;
+}
+.homework-session-rename-input {
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: var(--font-base);
+  color: var(--color-text);
+  background: var(--color-surface-low);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.4rem;
+  width: 100%;
 }
 @media (max-width: 640px) {
   .homework-session-row {

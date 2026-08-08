@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
-import { getHomeworkProgress, listHomework, openMaterialFile } from "../api/materials";
+import { useEffect, useRef, useState } from "react";
+import {
+  getHomeworkProgress,
+  listHomework,
+  openMaterialFile,
+  renameHomeworkSession,
+} from "../api/materials";
 import type { HomeworkProgress, Session, StudyMaterial } from "../types";
 
 function formatDate(iso: string | null): string {
@@ -24,6 +29,36 @@ interface HomeworkSessionRowProps {
 export function HomeworkSessionRow({ session, onOpen }: HomeworkSessionRowProps) {
   const [progress, setProgress] = useState<HomeworkProgress | null>(null);
   const [files, setFiles] = useState<StudyMaterial[]>([]);
+  const [title, setTitle] = useState(session.subtopic || "My homework");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const startEditing = () => {
+    setDraft(title);
+    setEditing(true);
+  };
+
+  const commitRename = async () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (!next || next === title) return;
+    setSaving(true);
+    const previous = title;
+    setTitle(next); // optimistic
+    try {
+      await renameHomeworkSession(session.id, next);
+    } catch {
+      setTitle(previous);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -45,14 +80,50 @@ export function HomeworkSessionRow({ session, onOpen }: HomeworkSessionRowProps)
       <button
         type="button"
         className="homework-session-main"
-        onClick={() => onOpen(session.id)}
+        onClick={() => (editing ? undefined : onOpen(session.id))}
       >
         <span className="material-symbols-outlined">assignment</span>
         <span className="homework-session-text">
-          <strong>{session.subtopic || "My homework"}</strong>
+          {editing ? (
+            <input
+              ref={inputRef}
+              className="homework-session-rename-input"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitRename();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setEditing(false);
+                }
+              }}
+            />
+          ) : (
+            <strong>{title}</strong>
+          )}
           <small>{formatDate(session.created_at)}</small>
         </span>
       </button>
+
+      {!editing && (
+        <button
+          type="button"
+          className="homework-session-rename"
+          onClick={(e) => {
+            e.stopPropagation();
+            startEditing();
+          }}
+          disabled={saving}
+          aria-label="Rename session"
+          title="Rename session"
+        >
+          <span className="material-symbols-outlined">edit</span>
+        </button>
+      )}
 
       <span className="homework-session-progress">
         {progress

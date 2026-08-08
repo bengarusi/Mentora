@@ -9,6 +9,9 @@ class SessionCreate(BaseModel):
     subtopic: str = Field(min_length=1)  # mandatory precise lesson focus
     goal_text: str
 
+class SessionRename(BaseModel):
+    title: str = Field(min_length=1)
+
 class SessionResponse(BaseModel):
     id: int
     student_id: int

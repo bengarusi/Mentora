@@ -180,6 +180,25 @@ class TutorService:
         — see get_homework_sessions_with_activity."""
         return self.sessions.get_homework_sessions_with_activity(self.student.id)
 
+    def rename_homework_session(self, session_id: int, title: str) -> LessonSession:
+        """Let the student give a Homework Help session a name of their own,
+        replacing the default "My homework" shown on the Files page."""
+        title = title.strip()
+        if not title:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Title cannot be empty."
+            )
+        session = self._get_session(session_id)
+        if session.mode != SessionMode.HOMEWORK.value:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Only Homework Help sessions can be renamed.",
+            )
+        session.subtopic = title
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
     def get_homework_progress(self, session_id: int) -> HomeworkProgress:
         """How many of the homework's exercises the student has solved.
 

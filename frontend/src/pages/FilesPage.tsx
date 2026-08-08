@@ -22,13 +22,23 @@ const FALLBACK_FORMATS: SupportedFormats = {
   max_upload_mb: 20,
 };
 
+/** Sentinel folder for materials with no topic tag — not a real curriculum id. */
+const UNTAGGED_TOPIC = "__untagged__";
+
+interface TopicFolder {
+  key: string;
+  title: string;
+  icon: string;
+  count: number;
+}
+
 export function FilesPage() {
   const navigate = useNavigate();
   const [flow, setFlow] = useState<Flow>("study");
   const [materials, setMaterials] = useState<StudyMaterial[]>([]);
   const [homeworkSessions, setHomeworkSessions] = useState<Session[]>([]);
   const [formats, setFormats] = useState<SupportedFormats>(FALLBACK_FORMATS);
-  const [topic, setTopic] = useState("");
+  const [openTopic, setOpenTopic] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,13 +76,15 @@ export function FilesPage() {
 
   const handleUpload = useCallback(
     async (files: File[]) => {
+      const topicTag =
+        openTopic && openTopic !== UNTAGGED_TOPIC ? openTopic : undefined;
       setBusy(true);
       setError(null);
       try {
         // Sequential so each file's status lands predictably and one failure
         // doesn't take the rest of the batch down with it.
         for (const file of files) {
-          await uploadStudyMaterial(file, { subject: "math", topic: topic || undefined });
+          await uploadStudyMaterial(file, { subject: "math", topic: topicTag });
         }
         await refresh();
       } catch {
@@ -81,7 +93,7 @@ export function FilesPage() {
         setBusy(false);
       }
     },
-    [refresh, topic]
+    [refresh, openTopic]
   );
 
   const handleDelete = useCallback(
@@ -131,6 +143,44 @@ export function FilesPage() {
     [materials]
   );
 
+  const folders = useMemo<TopicFolder[]>(() => {
+    const knownTitles = new Set(MATH_CURRICULUM.map((t) => t.title));
+    const countByTitle = new Map<string, number>();
+    let untaggedCount = 0;
+    for (const m of materials) {
+      if (m.topic && knownTitles.has(m.topic)) {
+        countByTitle.set(m.topic, (countByTitle.get(m.topic) ?? 0) + 1);
+      } else {
+        untaggedCount += 1;
+      }
+    }
+    const curriculumFolders = MATH_CURRICULUM.map((t) => ({
+      key: t.title,
+      title: t.title,
+      icon: t.icon,
+      count: countByTitle.get(t.title) ?? 0,
+    }));
+    if (untaggedCount > 0) {
+      curriculumFolders.push({
+        key: UNTAGGED_TOPIC,
+        title: "Untagged files",
+        icon: "folder_off",
+        count: untaggedCount,
+      });
+    }
+    return curriculumFolders;
+  }, [materials]);
+
+  const openFolder = folders.find((f) => f.key === openTopic) ?? null;
+  const visibleMaterials = useMemo(() => {
+    if (!openTopic) return materials;
+    if (openTopic === UNTAGGED_TOPIC) {
+      const knownTitles = new Set(MATH_CURRICULUM.map((t) => t.title));
+      return materials.filter((m) => !m.topic || !knownTitles.has(m.topic));
+    }
+    return materials.filter((m) => m.topic === openTopic);
+  }, [materials, openTopic]);
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -173,66 +223,109 @@ export function FilesPage() {
 
       {flow === "study" ? (
         <section className="flow-panel">
-          <div className="flow-intro">
-            <h2>Your study materials</h2>
-            <p className="muted">
-              Upload worksheets, slides, or notes from class. When you start a
-              lesson on a matching topic, your tutor will use the parts that
-              actually help — not everything at once.
-            </p>
-          </div>
+          {openFolder ? (
+            <>
+              <button
+                type="button"
+                className="link-button folder-back"
+                onClick={() => setOpenTopic(null)}
+              >
+                <span className="material-symbols-outlined">arrow_back</span>
+                All topics
+              </button>
 
-          <label className="field topic-field">
-            <span>Tag these files with a topic (optional)</span>
-            <select value={topic} onChange={(e) => setTopic(e.target.value)}>
-              <option value="">No specific topic</option>
-              {MATH_CURRICULUM.map((t) => (
-                <option key={t.id} value={t.title}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
-          </label>
+              <div className="flow-intro">
+                <h2>{openFolder.title}</h2>
+                <p className="muted">
+                  Upload worksheets, slides, or notes for this topic. Your
+                  tutor will use them when you're learning it.
+                </p>
+              </div>
 
-          <FileDropzone
-            onFiles={handleUpload}
-            accept={formats.extensions}
-            maxSizeMb={formats.max_upload_mb}
-            disabled={busy}
-            multiple
-            icon="library_books"
-            title={busy ? "Uploading…" : "Add study materials"}
-            hint="Drag files here, or click to choose"
-          />
+              <FileDropzone
+                onFiles={handleUpload}
+                accept={formats.extensions}
+                maxSizeMb={formats.max_upload_mb}
+                disabled={busy}
+                multiple
+                icon="library_books"
+                title={busy ? "Uploading…" : "Add study materials"}
+                hint="Drag files here, or click to choose"
+              />
 
-          <div className="materials-head">
-            <h3>
-              Saved files
-              {materials.length > 0 && (
-                <span className="muted"> · {readyCount} ready to use</span>
+              <div className="materials-head">
+                <h3>
+                  {openFolder.title}
+                  {visibleMaterials.length > 0 && (
+                    <span className="muted"> · {visibleMaterials.length} file{visibleMaterials.length === 1 ? "" : "s"}</span>
+                  )}
+                </h3>
+              </div>
+
+              {visibleMaterials.length === 0 ? (
+                <div className="empty-state">
+                  <span className="material-symbols-outlined">folder_open</span>
+                  <p>No files in this topic yet. Upload your first one above!</p>
+                </div>
+              ) : (
+                <div className="material-grid">
+                  {visibleMaterials.map((material) => (
+                    <MaterialCard
+                      key={material.id}
+                      material={material}
+                      onDelete={handleDelete}
+                      onRetry={handleRetry}
+                      busy={busy}
+                    />
+                  ))}
+                </div>
               )}
-            </h3>
-          </div>
-
-          {loading ? (
-            <p className="muted">Loading your files…</p>
-          ) : materials.length === 0 ? (
-            <div className="empty-state">
-              <span className="material-symbols-outlined">folder_open</span>
-              <p>No study materials yet. Upload your first one above!</p>
-            </div>
+            </>
           ) : (
-            <div className="material-grid">
-              {materials.map((material) => (
-                <MaterialCard
-                  key={material.id}
-                  material={material}
-                  onDelete={handleDelete}
-                  onRetry={handleRetry}
-                  busy={busy}
-                />
-              ))}
-            </div>
+            <>
+              <div className="flow-intro">
+                <h2>Your study materials</h2>
+                <p className="muted">
+                  Upload worksheets, slides, or notes from class, organized by
+                  topic. When you start a lesson on a matching topic, your
+                  tutor will use the parts that actually help — not
+                  everything at once.
+                </p>
+              </div>
+
+              <div className="materials-head">
+                <h3>
+                  Topics
+                  {materials.length > 0 && (
+                    <span className="muted"> · {readyCount} file{readyCount === 1 ? "" : "s"} ready to use</span>
+                  )}
+                </h3>
+              </div>
+
+              {loading ? (
+                <p className="muted">Loading your files…</p>
+              ) : (
+                <div className="material-folder-list">
+                  {folders.map((folder) => (
+                    <button
+                      key={folder.key}
+                      type="button"
+                      className="material-folder-row"
+                      onClick={() => setOpenTopic(folder.key)}
+                    >
+                      <span className="material-symbols-outlined material-folder-icon">
+                        {folder.icon}
+                      </span>
+                      <span className="material-folder-title">{folder.title}</span>
+                      <span className="material-folder-count">
+                        {folder.count} file{folder.count === 1 ? "" : "s"}
+                      </span>
+                      <span className="material-symbols-outlined">chevron_right</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </section>
       ) : (
