@@ -1657,6 +1657,7 @@ textarea {
   padding: 1.15rem 1.4rem;
   cursor: pointer;
   background: none;
+  color: var(--color-text);
   border: none;
   width: 100%;
   text-align: left;
