@@ -1,5 +1,6 @@
 import { apiClient, getToken } from "./client";
 import type {
+  DifficultyLevel,
   LessonSummaryResponse,
   PhaseResult,
   PracticeAnswerItem,
@@ -9,6 +10,17 @@ import type {
   TurnResult,
   VoiceTurnResult,
 } from "../types";
+
+export async function setLessonDifficulty(
+  sessionId: number,
+  level: DifficultyLevel
+): Promise<TurnResult> {
+  const { data } = await apiClient.post<TurnResult>(
+    `/tutor/${sessionId}/difficulty`,
+    { level }
+  );
+  return data;
+}
 
 export async function sendTurn(
   sessionId: number,

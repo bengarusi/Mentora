@@ -1,12 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getMessages, getSession } from "../api/sessions";
-import { advancePhase, sendVoiceTurn, streamSpeechTurn, streamTurn } from "../api/tutor";
+import {
+  advancePhase,
+  sendVoiceTurn,
+  setLessonDifficulty,
+  streamSpeechTurn,
+  streamTurn,
+} from "../api/tutor";
 import { ChatWindow } from "../components/ChatWindow";
 import { LearningPathSidebar } from "../components/LearningPathSidebar";
 import { TeacherAvatar } from "../components/TeacherAvatar";
 import type { AvatarState } from "../components/TeacherAvatar";
-import type { LessonPhase, Message, Session } from "../types";
+import type { DifficultyLevel, LessonPhase, Message, Session } from "../types";
+
+const NEXT_DIFFICULTY: Record<DifficultyLevel, DifficultyLevel | null> = {
+  easy: "medium",
+  medium: "hard",
+  hard: null,
+};
+
+const DIFFICULTY_LABEL: Record<DifficultyLevel, string> = {
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard",
+};
 
 // Temporary latency instrumentation. Flip to true to log time-to-first-text /
 // time-to-first-audio in the browser console; keep false in normal use.
@@ -385,6 +403,23 @@ export function LessonPage() {
     else startRecording();
   }, [recording, startRecording, stopRecording]);
 
+  const handlePickDifficulty = useCallback(
+    async (level: DifficultyLevel) => {
+      setBusy(true);
+      setAvatarState("thinking");
+      try {
+        await setLessonDifficulty(id, level);
+        await reload();
+        setAvatarState("idle");
+      } catch {
+        setAvatarState("idle");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [id, reload]
+  );
+
   async function handleStartPractice() {
     setBusy(true);
     try {
@@ -420,7 +455,9 @@ export function LessonPage() {
 
   const phase = (session.phase ?? "teaching") as LessonPhase;
   const isTeaching = phase === "teaching";
-  const canChat = phase === "teaching" || phase === "summary";
+  const pickingDifficulty = isTeaching && !session.difficulty;
+  const canChat = (isTeaching && !pickingDifficulty) || phase === "summary";
+  const nextDifficulty = session.difficulty ? NEXT_DIFFICULTY[session.difficulty] : null;
   const progressPct =
     ((PHASE_ORDER.indexOf(phase) + 1) / PHASE_ORDER.length) * 100;
 
@@ -446,7 +483,23 @@ export function LessonPage() {
       <section className="chat-main">
         <ChatWindow messages={messages} />
 
-        {isTeaching && (
+        {isTeaching && pickingDifficulty && (
+          <div className="quick-actions">
+            {(Object.keys(DIFFICULTY_LABEL) as DifficultyLevel[]).map((level) => (
+              <button
+                key={level}
+                type="button"
+                className="pill-button pressable-button"
+                onClick={() => handlePickDifficulty(level)}
+                disabled={busy}
+              >
+                {DIFFICULTY_LABEL[level]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isTeaching && !pickingDifficulty && (
           <div className="quick-actions">
             <button
               type="button"
@@ -464,6 +517,16 @@ export function LessonPage() {
             >
               Give me an example
             </button>
+            {nextDifficulty && (
+              <button
+                type="button"
+                className="pill-button pressable-button"
+                onClick={() => handlePickDifficulty(nextDifficulty)}
+                disabled={busy}
+              >
+                Increase difficulty
+              </button>
+            )}
             <button
               type="button"
               className="pill-button pressable-button"
@@ -617,6 +680,17 @@ export function LessonPage() {
               <div className="context-row-value">{PHASE_LABEL[phase]}</div>
             </div>
           </div>
+          {session.difficulty && (
+            <div className="context-row">
+              <span className="material-symbols-outlined">speed</span>
+              <div>
+                <div className="context-row-label">Difficulty</div>
+                <div className="context-row-value">
+                  {DIFFICULTY_LABEL[session.difficulty]}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="context-card">

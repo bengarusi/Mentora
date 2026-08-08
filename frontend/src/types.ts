@@ -1,5 +1,7 @@
 export type Subject = "math" | "english";
 
+export type DifficultyLevel = "easy" | "medium" | "hard";
+
 export type LessonPhase =
   | "teaching"
   | "pre_practice_example"
@@ -33,6 +35,7 @@ export interface Session {
   goal_text: string;
   status: string;
   phase: LessonPhase | null;
+  difficulty: DifficultyLevel | null;
   created_at: string | null;
   ended_at: string | null;
 }
