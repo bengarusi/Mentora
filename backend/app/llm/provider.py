@@ -28,6 +28,7 @@ class TutorContext:
     level: str | None = None  # math_level / english_level for the subject
     recent_messages: list[tuple[str, str]] = field(default_factory=list)  # (role, content)
     subtopic: str | None = None  # precise lesson focus within the topic
+    difficulty: str | None = None  # student-chosen easy/medium/hard for this lesson
 
 
 class LLMProvider(ABC):
@@ -63,6 +64,13 @@ class LLMProvider(ABC):
 
         *verification* has the same authoritative meaning as in chat_reply.
         """
+
+    @abstractmethod
+    def generate_difficulty_change_message(
+        self, ctx: TutorContext, new_level: str
+    ) -> str:
+        """Acknowledge a mid-lesson difficulty change and give one fresh example
+        at the new level, continuing the teaching conversation."""
 
     @abstractmethod
     def generate_pre_practice_example(self, ctx: TutorContext) -> str:

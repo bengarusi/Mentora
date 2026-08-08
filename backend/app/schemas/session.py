@@ -18,6 +18,7 @@ class SessionResponse(BaseModel):
     goal_text: str
     status: str
     phase: str | None = None
+    difficulty: str | None = None
     created_at: datetime | None = None
     ended_at: datetime | None = None
 

@@ -35,6 +35,10 @@ class TurnResult(BaseModel):
     phase: str
 
 
+class DifficultySelectRequest(BaseModel):
+    level: str  # "easy" | "medium" | "hard"
+
+
 class PhaseResult(BaseModel):
     phase: str
     tutor_message: str | None = None

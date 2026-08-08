@@ -91,4 +91,5 @@ class LessonContext:
             level=level,
             recent_messages=recent,
             subtopic=getattr(self.session, "subtopic", None),
+            difficulty=getattr(self.session, "difficulty", None),
         )

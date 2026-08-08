@@ -11,7 +11,15 @@ from app.schemas.practice import (
     PracticeSubmitResult,
     PracticeSummaryDTO,
 )
-from app.schemas.tutor import PhaseResult, TtsRequest, TtsResult, TurnRequest, TurnResult, VoiceTurnResult
+from app.schemas.tutor import (
+    DifficultySelectRequest,
+    PhaseResult,
+    TtsRequest,
+    TtsResult,
+    TurnRequest,
+    TurnResult,
+    VoiceTurnResult,
+)
 from app.services.tutor_service import TutorService
 from app.services.voice_service import VoiceService, VoiceServiceError
 
@@ -157,6 +165,20 @@ async def voice_turn(
         phase=result.phase,
         audio_base64=audio_base64,
     )
+
+
+# ---------------------------------------------------------------------------
+# Difficulty: initial pick (right after the lesson opens) or mid-lesson change
+# via the "Increase difficulty" quick action
+# ---------------------------------------------------------------------------
+
+@router.post("/{session_id}/difficulty", response_model=TurnResult)
+def set_lesson_difficulty(
+    session_id: int,
+    body: DifficultySelectRequest,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    return tutor.set_lesson_difficulty(session_id, body.level)
 
 
 # ---------------------------------------------------------------------------

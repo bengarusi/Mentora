@@ -48,6 +48,11 @@ class FakeLLMProvider(LLMProvider):
         ).split(" "):
             yield word + " "
 
+    def generate_difficulty_change_message(
+        self, ctx: TutorContext, new_level: str
+    ) -> str:
+        return f"Switching to {new_level} for {ctx.topic}. Here is a new example. What is 2+2?"
+
     def generate_pre_practice_example(self, ctx: TutorContext) -> str:
         return (
             f"Example Question:\nSolve a sample {ctx.topic} problem.\n\n"

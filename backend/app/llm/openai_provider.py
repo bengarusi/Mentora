@@ -158,6 +158,16 @@ class OpenAIProvider(LLMProvider):
             duration_ms,
         )
 
+    def generate_difficulty_change_message(
+        self, ctx: TutorContext, new_level: str
+    ) -> str:
+        return self._call_llm(
+            *prompts.difficulty_change_prompt(ctx, new_level),
+            operation="difficulty_change",
+            max_tokens=500,
+            temperature=0.7,
+        ).strip()
+
     def generate_pre_practice_example(self, ctx: TutorContext) -> str:
         return self._call_llm(
             *prompts.pre_practice_example_prompt(ctx),

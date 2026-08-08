@@ -15,6 +15,12 @@ class LessonPhase(str, Enum):
     COMPLETED = "completed"
 
 
+class DifficultyLevel(str, Enum):
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+
+
 class SessionStatus(str, Enum):
     ACTIVE = "active"
     ENDED = "ended"

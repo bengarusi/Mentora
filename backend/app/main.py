@@ -53,6 +53,12 @@ def _ensure_dev_schema() -> None:
                     "ALTER COLUMN subtopic SET NOT NULL"
                 )
             )
+            conn.execute(
+                text(
+                    "ALTER TABLE lesson_sessions "
+                    "ADD COLUMN IF NOT EXISTS difficulty VARCHAR"
+                )
+            )
     except Exception:  # noqa: BLE001 - never block startup on a dev migration
         logging.getLogger("app.main").warning(
             "dev schema check for lesson_sessions.subtopic skipped", exc_info=True

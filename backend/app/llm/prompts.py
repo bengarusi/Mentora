@@ -11,6 +11,12 @@ from app.llm.provider import TutorContext
 def _persona(ctx: TutorContext) -> str:
     level = f"\nStudent level in this subject: {ctx.level}." if ctx.level else ""
     subtopic = f"- Subtopic (the precise focus of this lesson): {ctx.subtopic}\n" if ctx.subtopic else ""
+    difficulty = (
+        f"- Difficulty level the student chose for this lesson: {ctx.difficulty}. "
+        f"Scale every explanation, example, and question to this level.\n"
+        if ctx.difficulty
+        else ""
+    )
 
     return (
         f"You are Mentora, a professional, patient, and encouraging tutor.\n"
@@ -20,6 +26,7 @@ def _persona(ctx: TutorContext) -> str:
         f"- Subject: {ctx.subject}\n"
         f"- Topic: {ctx.topic}\n"
         f"{subtopic}"
+        f"{difficulty}"
         f"- Lesson goal: {ctx.goal_text}"
         f"{level}\n\n"
 
@@ -51,11 +58,31 @@ def _history(ctx: TutorContext) -> str:
 # Teaching phase
 # ---------------------------------------------------------------------------
 
+def difficulty_selection_message() -> str:
+    """Deterministic (non-LLM) opening message: the tutor's very first message
+    in a new lesson, asked before any explanation, so the student picks a
+    difficulty level via the three level buttons in the chat UI."""
+    return (
+        "## Before we start\n\n"
+        "What level would you like to focus on for this topic?\n\n"
+        "> **Key rule:** Pick the level that feels right for you — you can always change it later.\n\n"
+        "Choose **Easy**, **Medium**, or **Hard** below to begin."
+    )
+
+
 def teaching_intro_prompt(ctx: TutorContext) -> tuple[str, str]:
     system = _persona(ctx)
 
+    difficulty_line = (
+        f"The student chose the **{ctx.difficulty}** difficulty level for this lesson — "
+        f"tailor the explanation, the numbers used, and the worked example to that level.\n\n"
+        if ctx.difficulty
+        else ""
+    )
+
     user = (
         "You are in the TEACHING phase.\n\n"
+        f"{difficulty_line}"
 
         "Your goals in this phase:\n"
         "1. Explain the topic clearly and naturally.\n"
@@ -169,6 +196,39 @@ def chat_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Mid-lesson difficulty change (student clicked "Increase difficulty")
+# ---------------------------------------------------------------------------
+
+def difficulty_change_prompt(ctx: TutorContext, new_level: str) -> tuple[str, str]:
+    system = _persona(ctx)
+
+    user = (
+        f"{_history(ctx)}\n\n"
+        f"The student just asked to change the difficulty level to **{new_level}**.\n\n"
+
+        "Your job:\n"
+        "1. Briefly and warmly acknowledge the new level (1 short sentence).\n"
+        f"2. Give ONE new worked example at the {new_level} level for the current lesson goal, "
+        "solved step by step.\n"
+        "3. End with one small question at the new difficulty level for the student to answer.\n\n"
+
+        "Required structure — use Markdown formatting:\n"
+        "1. A short heading naming the concept, using '## '.\n"
+        "2. The acknowledgement sentence.\n"
+        "3. An **Example:** header followed by numbered steps solved at the new level.\n"
+        "4. One small question for the student (on its own line).\n\n"
+
+        "Formatting rules:\n"
+        "- Use **bold** for key math terms and answers.\n"
+        "- Keep it concise — do not write long paragraphs.\n\n"
+
+        "Write the response now."
+    )
+
+    return system, user
+
+
+# ---------------------------------------------------------------------------
 # Pre-practice guided example
 # ---------------------------------------------------------------------------
 
@@ -219,18 +279,26 @@ def pre_practice_example_prompt(ctx: TutorContext) -> tuple[str, str]:
 def practice_questions_prompt(ctx: TutorContext, set_number: int) -> tuple[str, str]:
     system = _persona(ctx)
 
-    # Map set_number to a difficulty description so the LLM scales appropriately
-    difficulty_map = {
-        1: "easy and direct — basic application of the concept",
-        2: "medium — one extra step or a slightly less obvious application",
-        3: "harder — requires combining steps or deeper understanding",
+    # Base difficulty band from the student's chosen lesson-wide level, then a
+    # slight within-band progression across sets (each set still varies 1-3).
+    level_desc = {
+        "easy": "easy and direct — small numbers, single-step, basic application of the concept",
+        "medium": "medium — moderate numbers, may need one extra step or a less obvious application",
+        "hard": "challenging — larger numbers, multi-step reasoning, deeper understanding required",
     }
-    difficulty_desc = difficulty_map.get(set_number, "challenging but still age-appropriate")
+    base_desc = level_desc.get(ctx.difficulty or "medium", level_desc["medium"])
+    progression = {
+        1: "aim for the easier end of that range",
+        2: "aim for the middle of that range",
+        3: "aim for the harder end of that range",
+    }.get(set_number, "aim for a similar level to the previous sets")
+    difficulty_desc = f"{base_desc}; within that, {progression}"
 
     user = (
         f"You are generating PRACTICE SET {set_number}.\n\n"
 
-        f"Overall difficulty for this set: {difficulty_desc}.\n\n"
+        f"Overall difficulty level chosen by the student for this lesson: {ctx.difficulty or 'medium'}.\n"
+        f"Difficulty for this set: {difficulty_desc}.\n\n"
 
         "Goal:\n"
         "Create exactly 3 practice questions that test the lesson goal.\n"

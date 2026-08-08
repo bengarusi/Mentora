@@ -71,7 +71,12 @@ class TeachingState(_ConversationalState):
     phase = LessonPhase.TEACHING
 
     def generate_phase_opening_message(self, ctx: "LessonContext") -> str:
-        text = ctx.llm.generate_teaching_intro(ctx.build_tutor_context())
+        # The very first message of a lesson always asks the student to pick a
+        # difficulty level (via the chat UI's level buttons) before any teaching
+        # content is generated — deterministic, no LLM call needed here.
+        from app.llm.prompts import difficulty_selection_message
+
+        text = difficulty_selection_message()
         ctx.save_tutor_message_to_db(text)
         return text
 

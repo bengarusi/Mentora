@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from collections.abc import Iterator
 
-from app.core.enums import LessonPhase, SessionStatus
+from app.core.enums import DifficultyLevel, LessonPhase, SessionStatus
 from app.lesson.context import LessonContext
 from app.lesson.state import (
     InvalidLessonAction,
@@ -126,6 +126,41 @@ class TutorService:
             session.phase,
         )
         return session
+
+    # ---- difficulty: initial pick (TEACHING opening) or mid-lesson change ----
+
+    def set_lesson_difficulty(self, session_id: int, level: str) -> TurnResult:
+        session = self._get_session(session_id)
+        self._require_phase(session, LessonPhase.TEACHING)
+        try:
+            normalized = DifficultyLevel(level.strip().lower())
+        except ValueError:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Invalid difficulty level: '{level}'.",
+            )
+
+        ctx = self._build_ctx(session)
+        is_first_pick = session.difficulty is None
+        ctx.save_student_message_to_db(
+            f"I'd like to {'start at' if is_first_pick else 'switch to'} the "
+            f"{normalized.value} level."
+        )
+        session.difficulty = normalized.value
+
+        try:
+            if is_first_pick:
+                reply = ctx.llm.generate_teaching_intro(ctx.build_tutor_context())
+            else:
+                reply = ctx.llm.generate_difficulty_change_message(
+                    ctx.build_tutor_context(), normalized.value
+                )
+        except LLMError as exc:
+            raise self._llm_error(exc)
+
+        ctx.save_tutor_message_to_db(reply)
+        self.db.commit()
+        return TurnResult(tutor_message=reply, phase=session.phase)
 
     # ---- chat turn (TEACHING and SUMMARY phases) ----
 
