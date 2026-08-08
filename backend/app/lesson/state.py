@@ -57,8 +57,11 @@ class _ConversationalState(LessonState):
         ctx.save_student_message_to_db(text)
         # Pass an annotated version to the LLM so equivalent fractions like
         # "2/4" are shown as "2/4 [= 1/2]" — the LLM evaluates correctness
-        # against the simplified form rather than guessing.
-        reply = ctx.llm.chat_reply(ctx.build_tutor_context(), _annotate_math(text))
+        # against the simplified form rather than guessing. The raw message is
+        # also the retrieval query, so any relevant uploaded material is pulled in.
+        reply = ctx.llm.chat_reply(
+            ctx.build_tutor_context(text), _annotate_math(text)
+        )
         ctx.save_tutor_message_to_db(reply)
         return reply
 
@@ -84,7 +87,7 @@ class TeachingState(_ConversationalState):
         self, ctx: "LessonContext", text: str
     ) -> str:
         ctx.save_student_message_to_db(text)
-        tutor_ctx = ctx.build_tutor_context()
+        tutor_ctx = ctx.build_tutor_context(text)
         # Grade the student's answer to the question the tutor just asked, then
         # lock that verdict into the reply prompt — the chat LLM invents the
         # question and can't be trusted to grade its own answer (it marked a
@@ -99,6 +102,54 @@ class TeachingState(_ConversationalState):
 
     def get_next_phase_state(self, ctx: "LessonContext") -> "LessonState":
         return PrePracticeExampleState()
+
+
+# ---------------------------------------------------------------------------
+# Homework Help — a single-phase guided conversation over an uploaded file
+# ---------------------------------------------------------------------------
+
+class HomeworkHelpState(_ConversationalState):
+    """Terminal, conversational phase for the Homework Help flow.
+
+    Inheriting _ConversationalState is what makes both streaming paths, voice,
+    and answer-grading work here for free; the pedagogy differs entirely in the
+    prompt layer, which branches on the session's mode."""
+
+    phase = LessonPhase.HOMEWORK_HELP
+
+    def generate_phase_opening_message(self, ctx: "LessonContext") -> str:
+        text = ctx.llm.generate_homework_intro(ctx.build_tutor_context())
+        ctx.save_tutor_message_to_db(text)
+        return text
+
+    def generate_reply_to_student_message(
+        self, ctx: "LessonContext", text: str
+    ) -> str:
+        ctx.save_student_message_to_db(text)
+        # Deliberately NO locked verdict here, unlike the teaching chat.
+        #
+        # verify_chat_answer grades the student against the tutor's most recent
+        # question. That is sound in teaching, where the tutor invents the
+        # question and the student answers exactly it. In homework help the
+        # questions live in the uploaded file and the tutor asks scaffolding
+        # sub-steps, so the student may answer the sub-step, the whole exercise,
+        # or reason aloud. Grading the wrong pairing produced a confidently
+        # wrong verdict the prompt then forced the tutor to obey — telling a
+        # student their correct working was wrong. An unlocked reply is better
+        # than an authoritative mis-grade.
+        #
+        # This also matches what the streaming paths already do (they only
+        # verify for TeachingState), so typed, voice, and streamed turns agree.
+        reply = ctx.llm.chat_reply(
+            ctx.build_tutor_context(text), _annotate_math(text)
+        )
+        ctx.save_tutor_message_to_db(reply)
+        return reply
+
+    def get_next_phase_state(self, ctx: "LessonContext") -> "LessonState":
+        raise InvalidLessonAction(
+            "Homework Help doesn't have phases — just keep chatting."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +575,7 @@ def _validate_generated_answer(question_text: str, llm_answer: str) -> str:
 
 _STATE_BY_PHASE: dict[LessonPhase, type[LessonState]] = {
     LessonPhase.TEACHING: TeachingState,
+    LessonPhase.HOMEWORK_HELP: HomeworkHelpState,
     LessonPhase.PRE_PRACTICE_EXAMPLE: PrePracticeExampleState,
     LessonPhase.PRACTICE: PracticeState,
     LessonPhase.PRACTICE_SUMMARY: PracticeSummaryState,

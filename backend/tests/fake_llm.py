@@ -48,6 +48,25 @@ class FakeLLMProvider(LLMProvider):
         ).split(" "):
             yield word + " "
 
+    def generate_homework_intro(self, ctx: TutorContext) -> str:
+        seen = "I can see your homework." if ctx.homework_text else "Please upload your homework."
+        return f"Let's work on this together. {seen} What do you think it's asking?"
+
+    def summarize_homework_progress(
+        self,
+        homework_text: str,
+        transcript: list[tuple[str, str]],
+        total_exercises: int,
+    ) -> int:
+        # Deterministic stand-in: count tutor turns that read as a
+        # confirmation, capped to the real total.
+        solved = sum(
+            1
+            for role, content in transcript
+            if role == "tutor" and "correct" in content.lower()
+        )
+        return min(solved, total_exercises)
+
     def generate_difficulty_change_message(
         self, ctx: TutorContext, new_level: str
     ) -> str:

@@ -12,12 +12,15 @@ from app.api import authController as auth
 from app.api import messageController as message
 from app.api import tutorController as tutor
 from app.api import progressController as progress
+from app.api import materialController as materials
 from app.models import (  # noqa
     Student,
     LessonSession,
     Message,
     AssessmentQuestion,
     Performance,
+    StudyMaterial,
+    MaterialChunk,
 )
 
 setup_logging()
@@ -59,6 +62,34 @@ def _ensure_dev_schema() -> None:
                     "ADD COLUMN IF NOT EXISTS difficulty VARCHAR"
                 )
             )
+            # Homework Help sessions are distinguished by `mode`; existing rows
+            # are all normal lessons.
+            conn.execute(
+                text(
+                    "ALTER TABLE lesson_sessions "
+                    "ADD COLUMN IF NOT EXISTS mode VARCHAR"
+                )
+            )
+            conn.execute(
+                text("UPDATE lesson_sessions SET mode = 'lesson' WHERE mode IS NULL")
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE lesson_sessions "
+                    "ALTER COLUMN mode SET DEFAULT 'lesson'"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE lesson_sessions ALTER COLUMN mode SET NOT NULL"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE performance "
+                    "ADD COLUMN IF NOT EXISTS messages_synced INTEGER"
+                )
+            )
     except Exception:  # noqa: BLE001 - never block startup on a dev migration
         logging.getLogger("app.main").warning(
             "dev schema check for lesson_sessions.subtopic skipped", exc_info=True
@@ -93,6 +124,7 @@ app.include_router(session.router)
 app.include_router(message.router)
 app.include_router(tutor.router)
 app.include_router(progress.router)
+app.include_router(materials.router)
 
 @app.get("/")
 def root():

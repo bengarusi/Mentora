@@ -42,3 +42,8 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.42.0
 sympy>=1.13
+# Study-material text extraction (see app/files/extraction.py). Each is loaded
+# lazily by its extractor, so a missing one degrades that one file type only.
+pypdf==6.15.0
+python-docx==1.2.0
+python-pptx==1.0.2

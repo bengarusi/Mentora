@@ -158,6 +158,35 @@ class OpenAIProvider(LLMProvider):
             duration_ms,
         )
 
+    def generate_homework_intro(self, ctx: TutorContext) -> str:
+        return self._call_llm(
+            *prompts.homework_intro_prompt(ctx),
+            operation="homework_intro",
+            max_tokens=600,
+            temperature=0.6,
+        ).strip()
+
+    def summarize_homework_progress(
+        self,
+        homework_text: str,
+        transcript: list[tuple[str, str]],
+        total_exercises: int,
+    ) -> int:
+        raw = self._call_llm(
+            *prompts.homework_progress_prompt(
+                homework_text, transcript, total_exercises
+            ),
+            json_mode=True,
+            operation="homework_progress",
+            max_tokens=100,
+            temperature=0.0,
+        )
+        try:
+            solved = int(json.loads(raw)["solved_exercises"])
+        except Exception as exc:
+            raise LLMError(f"Could not parse homework progress JSON: {exc}") from exc
+        return max(0, min(solved, total_exercises))
+
     def generate_difficulty_change_message(
         self, ctx: TutorContext, new_level: str
     ) -> str:

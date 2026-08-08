@@ -5,6 +5,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.dependencies import get_tutor_service, get_voice_service
+from app.schemas.material import HomeworkSessionCreate
+from app.schemas.session import SessionResponse
 from app.schemas.practice import (
     PracticeAnswersSubmit,
     PracticeStartResult,
@@ -13,6 +15,7 @@ from app.schemas.practice import (
 )
 from app.schemas.tutor import (
     DifficultySelectRequest,
+    HomeworkProgress,
     PhaseResult,
     TtsRequest,
     TtsResult,
@@ -165,6 +168,49 @@ async def voice_turn(
         phase=result.phase,
         audio_base64=audio_base64,
     )
+
+
+# ---------------------------------------------------------------------------
+# Homework Help: a dedicated session whose subject matter is an uploaded file
+# ---------------------------------------------------------------------------
+
+@router.post("/homework", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+def create_homework_session(
+    body: HomeworkSessionCreate,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """Start an empty Homework Help session. The client then uploads the
+    homework via /materials/homework/{id} and calls /analyze."""
+    return tutor.create_homework_session(body)
+
+
+@router.get("/homework", response_model=list[SessionResponse])
+def list_homework_sessions(
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """Homework Help sessions, newest first — these are deliberately absent
+    from /sessions/ (which is about lessons), so this is how the Files page
+    offers them for resuming."""
+    return tutor.list_homework_sessions()
+
+
+@router.post("/{session_id}/homework/analyze", response_model=TurnResult)
+def analyze_homework(
+    session_id: int,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """Have the tutor read the uploaded homework and open the conversation.
+    Called again whenever the student adds another file."""
+    return tutor.analyze_homework(session_id)
+
+
+@router.get("/{session_id}/homework/progress", response_model=HomeworkProgress)
+def get_homework_progress(
+    session_id: int,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """How many exercises the student has solved out of the homework's total."""
+    return tutor.get_homework_progress(session_id)
 
 
 # ---------------------------------------------------------------------------

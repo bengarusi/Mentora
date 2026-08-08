@@ -19,5 +19,9 @@ backend/.env
 logs/
 backend/logs/
 
+# Uploaded study materials / homework (student data — never commit)
+storage/
+backend/storage/
+
 # Claude Code local settings (personal, not shared)
 .claude/settings.local.json

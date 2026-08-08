@@ -16,6 +16,17 @@ class LLMError(Exception):
 
 
 @dataclass
+class MaterialExcerpt:
+    """One passage retrieved from the student's own uploaded study materials.
+
+    Carries its source title so the tutor can say where an explanation came
+    from ("in your Fractions worksheet…") instead of quoting anonymously."""
+
+    title: str
+    content: str
+
+
+@dataclass
 class TutorContext:
     """Pedagogical context handed to the LLM. Built by TutorService from DB rows,
     so the provider stays database-agnostic and easy to fake in tests."""
@@ -29,6 +40,14 @@ class TutorContext:
     recent_messages: list[tuple[str, str]] = field(default_factory=list)  # (role, content)
     subtopic: str | None = None  # precise lesson focus within the topic
     difficulty: str | None = None  # student-chosen easy/medium/hard for this lesson
+    #: SessionMode value. Chat prompts branch on this, so the streaming paths
+    #: serve homework tutoring without a separate provider method.
+    mode: str = "lesson"
+    # Only the passages the retriever judged relevant to the current turn —
+    # never the student's whole library.
+    material_excerpts: list[MaterialExcerpt] = field(default_factory=list)
+    # Full text of the homework attached to a Homework Help session.
+    homework_text: str | None = None
 
 
 class LLMProvider(ABC):
@@ -64,6 +83,23 @@ class LLMProvider(ABC):
 
         *verification* has the same authoritative meaning as in chat_reply.
         """
+
+    @abstractmethod
+    def generate_homework_intro(self, ctx: TutorContext) -> str:
+        """Open a Homework Help session: acknowledge the uploaded work, restate
+        the first exercise, and ask the student where they are stuck — without
+        solving anything."""
+
+    @abstractmethod
+    def summarize_homework_progress(
+        self,
+        homework_text: str,
+        transcript: list[tuple[str, str]],
+        total_exercises: int,
+    ) -> int:
+        """Read the full conversation and return how many exercises the
+        student has genuinely solved (0..total_exercises). An exercise the
+        student skipped or is mid-attempt on does not count."""
 
     @abstractmethod
     def generate_difficulty_change_message(

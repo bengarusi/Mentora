@@ -2,10 +2,11 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
-type SidebarKey = "lessons" | "practice" | "journey" | "achievements";
+type SidebarKey = "lessons" | "files" | "practice" | "journey" | "achievements";
 
 const ITEMS: { key: SidebarKey; label: string; icon: string; to?: string }[] = [
   { key: "lessons", label: "My Lessons", icon: "school", to: "/progress" },
+  { key: "files", label: "My Files", icon: "folder", to: "/files" },
   { key: "practice", label: "Practice Room", icon: "edit_note" },
   { key: "journey", label: "Learning Journey", icon: "map", to: "/progress" },
   { key: "achievements", label: "Achievements", icon: "emoji_events" },

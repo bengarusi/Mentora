@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 
 from collections.abc import Iterator
 
-from app.core.enums import DifficultyLevel, LessonPhase, SessionStatus
+from app.core.enums import (
+    DifficultyLevel,
+    LessonPhase,
+    SessionMode,
+    SessionStatus,
+    SuccessLevel,
+)
+from app.files.homework import count_exercises
 from app.lesson.context import LessonContext
 from app.lesson.state import (
     InvalidLessonAction,
@@ -21,6 +28,7 @@ from app.lesson.state import (
     verify_chat_answer,
 )
 from app.llm.provider import LLMError, LLMProvider
+from app.models.performance import Performance
 from app.models.session import LessonSession
 from app.models.student import Student
 from app.repositories.session_repo import SessionRepository
@@ -33,8 +41,9 @@ from app.schemas.practice import (
     PracticeSetResult,
     PracticeQuestionDTO,
 )
+from app.schemas.material import HomeworkSessionCreate
 from app.schemas.session import SessionCreate
-from app.schemas.tutor import PhaseResult, TurnResult
+from app.schemas.tutor import HomeworkProgress, PhaseResult, TurnResult
 from app.services.speech_chunker import SpeechChunker
 from app.services.voice_service import VoiceService, VoiceServiceError
 
@@ -46,6 +55,13 @@ log = logging.getLogger("app.services.tutor_service")
 MAX_CONCURRENT_TTS = 2
 # Transport slice size for audio_delta events (the frontend reassembles per chunk_id).
 _AUDIO_DELTA_BYTES = 32 * 1024
+
+# Homework sessions reuse LessonSession's mandatory curriculum columns, which
+# don't apply to a file the student brought in. These stand in so the row stays
+# valid and the UI has something meaningful to label the session with.
+HOMEWORK_TOPIC = "Homework Help"
+HOMEWORK_SUBTOPIC = "My homework"
+HOMEWORK_GOAL = "I want help understanding and solving my homework."
 
 
 class TutorService:
@@ -127,6 +143,136 @@ class TutorService:
         )
         return session
 
+    # ---- homework help session ----
+
+    def create_homework_session(self, data: HomeworkSessionCreate) -> LessonSession:
+        """Open an empty Homework Help session.
+
+        No opening message yet: the tutor has nothing useful to say until the
+        student's homework has been uploaded and read. The frontend uploads
+        into this session, then calls `analyze_homework`."""
+        session = self.sessions.add(
+            LessonSession(
+                student_id=self.student.id,
+                subject=data.subject,
+                topic=HOMEWORK_TOPIC,
+                subtopic=(data.title or "").strip() or HOMEWORK_SUBTOPIC,
+                goal_text=HOMEWORK_GOAL,
+                status=SessionStatus.ACTIVE.value,
+                mode=SessionMode.HOMEWORK.value,
+                phase=LessonPhase.HOMEWORK_HELP.value,
+            )
+        )
+        self.db.commit()
+        self.db.refresh(session)
+        log.info(
+            "homework session created session_id=%s student_id=%s",
+            session.id,
+            self.student.id,
+        )
+        return session
+
+    def list_homework_sessions(self) -> list[LessonSession]:
+        """The student's Homework Help sessions with real activity in them,
+        newest first, so they can resume one instead of starting a fresh
+        session every visit. Sessions where "Start Homework Help" was clicked
+        but nothing was ever said are not real conversations and are excluded
+        — see get_homework_sessions_with_activity."""
+        return self.sessions.get_homework_sessions_with_activity(self.student.id)
+
+    def get_homework_progress(self, session_id: int) -> HomeworkProgress:
+        """How many of the homework's exercises the student has solved.
+
+        The exercise total is deterministic (counted from the uploaded text,
+        no LLM needed). The solved count requires reading the whole
+        conversation, so it is cached on the session's Performance row and
+        only recomputed when new messages have arrived since the last check —
+        cheap on every repeat view of the same session list."""
+        session = self._get_session(session_id)
+        if session.mode != SessionMode.HOMEWORK.value:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "This is not a Homework Help session."
+            )
+        ctx = self._build_ctx(session)
+
+        materials = ctx.materials.list_session_materials(session_id)
+        homework_text = "\n\n".join(
+            m.extracted_text
+            for m in materials
+            if m.status == "ready" and m.extracted_text
+        )
+        total = count_exercises(homework_text)
+
+        messages = ctx.messages.get_specific_session_messages_history(session_id)
+        message_count = len(messages)
+
+        perf = ctx.performances.get_specific_session_performance(session_id)
+        if (
+            perf is not None
+            and perf.messages_synced == message_count
+            and perf.total_questions == total
+        ):
+            return HomeworkProgress(
+                total_exercises=total, solved_exercises=perf.score
+            )
+
+        solved = 0
+        if total and message_count:
+            transcript = [(m.role, m.content) for m in messages]
+            try:
+                solved = self.llm.summarize_homework_progress(
+                    homework_text, transcript, total
+                )
+            except LLMError:
+                # Best-effort: keep the last known count rather than failing
+                # the whole session list over one summarization call.
+                solved = perf.score if perf else 0
+
+        level = (
+            SuccessLevel.ACHIEVED
+            if total and solved == total
+            else SuccessLevel.PARTIALLY
+            if solved
+            else SuccessLevel.NOT_ACHIEVED
+        )
+        if perf is None:
+            ctx.performances.add(
+                Performance(
+                    session_id=session_id,
+                    success_level=level.value,
+                    score=solved,
+                    total_questions=total,
+                    practice_sets=0,
+                    messages_synced=message_count,
+                )
+            )
+        else:
+            perf.success_level = level.value
+            perf.score = solved
+            perf.total_questions = total
+            perf.messages_synced = message_count
+        self.db.commit()
+
+        return HomeworkProgress(total_exercises=total, solved_exercises=solved)
+
+    def analyze_homework(self, session_id: int) -> TurnResult:
+        """Generate the tutor's opening analysis of the uploaded homework.
+
+        Safe to call again after the student adds another file — each call
+        appends a fresh analysis turn rather than replacing the conversation."""
+        session = self._get_session(session_id)
+        if session.mode != SessionMode.HOMEWORK.value:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "This is not a Homework Help session."
+            )
+        ctx = self._build_ctx(session)
+        try:
+            reply = ctx.state.generate_phase_opening_message(ctx)
+        except LLMError as exc:
+            raise self._llm_error(exc)
+        self.db.commit()
+        return TurnResult(tutor_message=reply or "", phase=session.phase)
+
     # ---- difficulty: initial pick (TEACHING opening) or mid-lesson change ----
 
     def set_lesson_difficulty(self, session_id: int, level: str) -> TurnResult:
@@ -194,12 +340,12 @@ class TutorService:
         if not isinstance(ctx.state, _ConversationalState):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                "You can only chat during the teaching or summary phase.",
+                "You can only chat during a teaching, summary, or homework-help phase.",
             )
 
         ctx.save_student_message_to_db(text)
         self.db.flush()  # visible to the history query below, not yet committed
-        tutor_ctx = ctx.build_tutor_context()
+        tutor_ctx = ctx.build_tutor_context(text)
         annotated = _annotate_math(text)
         # Only grade during teaching (where the tutor asks interactive questions),
         # not during the summary chat.
@@ -247,12 +393,12 @@ class TutorService:
         if not isinstance(ctx.state, _ConversationalState):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                "You can only chat during the teaching or summary phase.",
+                "You can only chat during a teaching, summary, or homework-help phase.",
             )
 
         ctx.save_student_message_to_db(text)
         self.db.flush()  # visible to the history query below, not yet committed
-        tutor_ctx = ctx.build_tutor_context()
+        tutor_ctx = ctx.build_tutor_context(text)
         annotated = _annotate_math(text)
         verdict = (
             verify_chat_answer(tutor_ctx.recent_messages, text, self.llm)

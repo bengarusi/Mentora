@@ -2,18 +2,24 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.enums import LessonPhase, MessageRole, Subject
-from app.llm.provider import LLMProvider, TutorContext
+from app.core.config import settings
+from app.core.enums import LessonPhase, MaterialStatus, MessageRole, SessionMode, Subject
+from app.files.retrieval import MaterialRetriever, get_material_retriever
+from app.llm.provider import LLMProvider, MaterialExcerpt, TutorContext
 from app.models.message import Message
 from app.models.session import LessonSession
 from app.models.student import Student
 from app.repositories.assessment_repo import AssessmentRepository
+from app.repositories.material_repo import MaterialRepository
 from app.repositories.message_repo import MessageRepository
 from app.repositories.performance_repo import PerformanceRepository
 
 log = logging.getLogger("app.lesson.context")
 
 _HISTORY_LIMIT = 10
+#: Passages pulled per turn. Small on purpose — the lesson leads, the material
+#: supports it.
+_MATERIAL_TOP_K = 3
 
 
 class LessonContext:
@@ -27,14 +33,17 @@ class LessonContext:
         session: LessonSession,
         student: Student,
         llm: LLMProvider,
+        retriever: MaterialRetriever | None = None,
     ):
         self.db = db
         self.session = session
         self.student = student
         self.llm = llm
+        self.retriever = retriever or get_material_retriever()
         self.messages = MessageRepository(db)
         self.questions = AssessmentRepository(db)
         self.performances = PerformanceRepository(db)
+        self.materials = MaterialRepository(db)
 
         from app.lesson.state import state_for_phase
 
@@ -71,7 +80,12 @@ class LessonContext:
             )
         )
 
-    def build_tutor_context(self) -> TutorContext:
+    def build_tutor_context(self, retrieval_query: str | None = None) -> TutorContext:
+        """Assemble the LLM's view of this turn.
+
+        *retrieval_query* is normally the student's latest message. When given,
+        the student's own study materials are searched and only the passages
+        that match are attached — uploads are never injected wholesale."""
         if self.session.subject == Subject.MATH.value:
             level = self.student.math_level
         else:
@@ -92,4 +106,65 @@ class LessonContext:
             recent_messages=recent,
             subtopic=getattr(self.session, "subtopic", None),
             difficulty=getattr(self.session, "difficulty", None),
+            mode=getattr(self.session, "mode", SessionMode.LESSON.value),
+            material_excerpts=self._retrieve_excerpts(retrieval_query),
+            homework_text=self._homework_text(),
         )
+
+    def _retrieve_excerpts(self, query: str | None) -> list[MaterialExcerpt]:
+        """Relevant passages from the student's study materials, or nothing.
+
+        Homework sessions skip this: their own attached file is the material,
+        and mixing in the wider library would only dilute the context."""
+        if not query or self.session.mode == SessionMode.HOMEWORK.value:
+            return []
+        try:
+            chunks = self.retriever.retrieve(
+                self.db,
+                student_id=self.student.id,
+                query=query,
+                subject=self.session.subject,
+                topic=self.session.topic,
+                limit=_MATERIAL_TOP_K,
+            )
+        except Exception:  # noqa: BLE001 - retrieval is an enhancement, never a blocker
+            log.warning(
+                "material retrieval failed session_id=%s", self.session.id, exc_info=True
+            )
+            return []
+
+        # Trim to a hard character budget so a long document can't dominate the
+        # prompt (or its cost), keeping the highest-scoring passages.
+        budget = settings.MATERIAL_CONTEXT_CHAR_BUDGET
+        excerpts: list[MaterialExcerpt] = []
+        for chunk in chunks:
+            if budget <= 0:
+                break
+            content = chunk.content[:budget]
+            budget -= len(content)
+            excerpts.append(
+                MaterialExcerpt(title=chunk.material_title, content=content)
+            )
+        return excerpts
+
+    def _homework_text(self) -> str | None:
+        """Combined text of every homework file on this session, capped to the
+        same budget so a long worksheet still leaves room for the conversation."""
+        if self.session.mode != SessionMode.HOMEWORK.value:
+            return None
+        rows = [
+            m
+            for m in self.materials.list_session_materials(self.session.id)
+            if m.status == MaterialStatus.READY.value and m.extracted_text
+        ]
+        if not rows:
+            return None
+        budget = settings.MATERIAL_CONTEXT_CHAR_BUDGET
+        parts: list[str] = []
+        for material in rows:
+            if budget <= 0:
+                break
+            body = material.extracted_text[:budget]
+            budget -= len(body)
+            parts.append(f"--- {material.title or material.filename} ---\n{body}")
+        return "\n\n".join(parts)

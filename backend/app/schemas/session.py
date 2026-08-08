@@ -19,6 +19,7 @@ class SessionResponse(BaseModel):
     status: str
     phase: str | None = None
     difficulty: str | None = None
+    mode: str = "lesson"
     created_at: datetime | None = None
     ended_at: datetime | None = None
 

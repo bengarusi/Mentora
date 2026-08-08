@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from app.core.enums import LessonPhase, SessionStatus
+from app.core.enums import LessonPhase, SessionMode, SessionStatus
 from app.db.database import Base
 
 
@@ -17,6 +17,9 @@ class LessonSession(Base):
     topic = Column(String, nullable=False)
     subtopic = Column(String, nullable=False)  # precise lesson focus (mandatory)
     goal_text = Column(String, nullable=False)
+    mode = Column(
+        String, nullable=False, default=SessionMode.LESSON.value, index=True
+    )  # lesson (teaching→practice ladder) or homework (single-phase help chat)
     status = Column(String, nullable=False, default=SessionStatus.ACTIVE.value)  # lifecycle
     phase = Column(String, nullable=False, default=LessonPhase.TEACHING.value)  # pedagogical phase
     difficulty = Column(String, nullable=True)  # student-chosen easy/medium/hard, set after teaching starts
@@ -33,5 +36,10 @@ class LessonSession(Base):
         "Performance",
         back_populates="session",
         uselist=False,
+        cascade="all, delete-orphan",
+    )
+    # Homework files attached to this session (empty for normal lessons).
+    materials = relationship(
+        "StudyMaterial",
         cascade="all, delete-orphan",
     )

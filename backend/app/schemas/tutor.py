@@ -39,6 +39,11 @@ class DifficultySelectRequest(BaseModel):
     level: str  # "easy" | "medium" | "hard"
 
 
+class HomeworkProgress(BaseModel):
+    total_exercises: int
+    solved_exercises: int
+
+
 class PhaseResult(BaseModel):
     phase: str
     tutor_message: str | None = None

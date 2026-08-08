@@ -25,5 +25,11 @@ class Performance(Base):
     practice_sets = Column(Integer, nullable=False, default=1)    # how many practice sets completed
     summary_text = Column(Text, nullable=True)        # AI final lesson summary
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Homework Help reuses this row for its own progress (score = exercises
+    # solved, total_questions = exercises total). Computing that requires an
+    # LLM read of the whole transcript, so this snapshots the message count as
+    # of the last computation — unchanged means the cached score is still
+    # correct and the LLM call can be skipped.
+    messages_synced = Column(Integer, nullable=True)
 
     session = relationship("LessonSession", back_populates="performance")

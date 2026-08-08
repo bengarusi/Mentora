@@ -39,6 +39,12 @@ const SummaryPage = lazy(() =>
 const ProgressPage = lazy(() =>
   import("./pages/ProgressPage").then((m) => ({ default: m.ProgressPage }))
 );
+const FilesPage = lazy(() =>
+  import("./pages/FilesPage").then((m) => ({ default: m.FilesPage }))
+);
+const HomeworkPage = lazy(() =>
+  import("./pages/HomeworkPage").then((m) => ({ default: m.HomeworkPage }))
+);
 
 function AppLayout() {
   const { student, logout } = useAuth();
@@ -58,6 +64,9 @@ function AppLayout() {
           </NavLink>
           <NavLink to="/progress" className={navClass}>
             My Lessons
+          </NavLink>
+          <NavLink to="/files" className={navClass}>
+            My Files
           </NavLink>
         </nav>
         <div className="topbar-right">
@@ -100,6 +109,8 @@ export default function App() {
         <Route path="/new" element={<NewLessonPage />} />
         <Route path="/topic/:topicId" element={<SubTopicSelectionPage />} />
         <Route path="/progress" element={<ProgressPage />} />
+        <Route path="/files" element={<FilesPage />} />
+        <Route path="/homework/:sessionId" element={<HomeworkPage />} />
         <Route path="/lesson/:sessionId" element={<LessonPage />} />
         <Route
           path="/lesson/:sessionId/pre-practice"

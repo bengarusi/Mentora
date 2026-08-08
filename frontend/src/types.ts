@@ -8,7 +8,51 @@ export type LessonPhase =
   | "practice"
   | "practice_summary"
   | "summary"
-  | "completed";
+  | "completed"
+  | "homework_help";
+
+export type SessionMode = "lesson" | "homework";
+
+/** Extraction lifecycle of an uploaded file. Only "ready" material is
+ * retrievable by the tutor. */
+export type MaterialStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "unsupported"
+  | "failed";
+
+export type MaterialKind = "study_material" | "homework";
+
+export interface StudyMaterial {
+  id: number;
+  student_id: number;
+  session_id: number | null;
+  kind: MaterialKind;
+  subject: string | null;
+  topic: string | null;
+  subtopic: string | null;
+  title: string | null;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number;
+  status: MaterialStatus;
+  status_detail: string | null;
+  page_count: number | null;
+  chunk_count: number;
+  created_at: string | null;
+  processed_at: string | null;
+}
+
+export interface SupportedFormats {
+  extensions: string[];
+  max_upload_mb: number;
+}
+
+export interface HomeworkProgress {
+  total_exercises: number;
+  solved_exercises: number;
+}
 
 export interface Student {
   id: number;
@@ -36,6 +80,7 @@ export interface Session {
   status: string;
   phase: LessonPhase | null;
   difficulty: DifficultyLevel | null;
+  mode: SessionMode;
   created_at: string | null;
   ended_at: string | null;
 }
