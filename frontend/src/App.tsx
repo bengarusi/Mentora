@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Link, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
+import { Logo } from "./components/Logo";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 
@@ -48,6 +49,7 @@ function AppLayout() {
     <div className="app">
       <header className="topbar">
         <Link to="/" className="brand">
+          <Logo size={30} />
           Mentora
         </Link>
         <nav>

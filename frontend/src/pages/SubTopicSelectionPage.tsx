@@ -72,11 +72,6 @@ export function SubTopicSelectionPage() {
             >
               <div className="subtopic-card-head">
                 <span className="subtopic-card-title">{sub.title}</span>
-                {sub.difficulty && (
-                  <span className={`difficulty-badge ${sub.difficulty}`}>
-                    {sub.difficulty}
-                  </span>
-                )}
               </div>
               <span className="subtopic-card-desc">{sub.description}</span>
               <span className="subtopic-card-goal">

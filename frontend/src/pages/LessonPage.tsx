@@ -362,6 +362,21 @@ export function LessonPage() {
     [id, voicePlayback, playTutorAudio]
   );
 
+  // Muting mid-speech is a barge-in too: stop the tutor immediately, even
+  // mid-sentence, instead of just silencing future turns.
+  const handleVoicePlaybackToggle = useCallback(
+    (enabled: boolean) => {
+      setVoicePlayback(enabled);
+      if (!enabled) {
+        stopSpeechAndAudio();
+        setAvatarState("idle");
+        setBusy(false);
+        setVoiceError(null);
+      }
+    },
+    [stopSpeechAndAudio]
+  );
+
   const startRecording = useCallback(async () => {
     setVoiceError(null);
     // Starting to record is a barge-in: cut off the tutor's current speech.
@@ -545,7 +560,7 @@ export function LessonPage() {
                 <input
                   type="checkbox"
                   checked={voicePlayback}
-                  onChange={(e) => setVoicePlayback(e.target.checked)}
+                  onChange={(e) => handleVoicePlaybackToggle(e.target.checked)}
                 />
                 <span className="material-symbols-outlined">
                   {voicePlayback ? "volume_up" : "volume_off"}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { Logo } from "../components/Logo";
 
 export function RegisterPage() {
   const { register } = useAuth();
@@ -36,7 +37,10 @@ export function RegisterPage() {
   return (
     <div className="centered">
       <form className="card form" onSubmit={handleSubmit}>
-        <h1>Mentora</h1>
+        <h1 className="brand-heading">
+          <Logo size={36} />
+          Mentora
+        </h1>
         <h2>Create account</h2>
         {error && <p className="error">{error}</p>}
         <label>

@@ -195,10 +195,19 @@ textarea {
   z-index: 20;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 700;
   font-size: 1.4rem;
   color: var(--color-primary);
   letter-spacing: 0.01em;
+}
+.brand-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
 }
 .topbar nav {
   display: flex;
@@ -667,29 +676,6 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-}
-.difficulty-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-pill);
-  background: var(--color-surface-low);
-  color: var(--color-muted);
-  flex-shrink: 0;
-}
-.difficulty-badge.easy {
-  background: var(--color-secondary-soft);
-  color: var(--color-secondary);
-}
-.difficulty-badge.medium {
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-}
-.difficulty-badge.hard {
-  background: var(--color-error-soft);
-  color: var(--color-error);
 }
 .page-footer-actions {
   margin-top: 2rem;

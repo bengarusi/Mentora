@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { clearSessionExpired, getSessionExpired } from "../api/client";
+import { Logo } from "../components/Logo";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -36,7 +37,10 @@ export function LoginPage() {
   return (
     <div className="centered">
       <form className="card form" onSubmit={handleSubmit}>
-        <h1>Mentora</h1>
+        <h1 className="brand-heading">
+          <Logo size={36} />
+          Mentora
+        </h1>
         <h2>Log in</h2>
         {expired && (
           <p className="notice">Your session expired. Please log in again.</p>
