@@ -7,8 +7,11 @@ import {
   startPractice,
   submitPracticeSet,
 } from "../api/tutor";
+import { BoardButton } from "../components/BoardButton";
+import { BoardModal } from "../components/BoardModal";
 import { LearningPathSidebar } from "../components/LearningPathSidebar";
 import { RichText } from "../components/RichText";
+import { useBoardExplanation } from "../hooks/useBoardExplanation";
 import type {
   GradedPracticeItem,
   PracticeAnswerItem,
@@ -39,6 +42,14 @@ export function PracticePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [topicLabel, setTopicLabel] = useState("Practice");
+  // Practice has no voice toggle of its own, so follow the preference the
+  // student set in the lesson chat.
+  const [voicePlayback] = useState(
+    () => localStorage.getItem("mentora_tutor_voice") !== "off"
+  );
+
+  // Board explanations are opt-in per question and never open on their own.
+  const board = useBoardExplanation(id);
 
   const loadInitialSet = useCallback(async () => {
     if (questions.length > 0) return;
@@ -87,6 +98,8 @@ export function PracticePage() {
       const result = await submitPracticeSet(id, payload);
       setGrades(result.grades);
       setSetPhase("graded");
+      // A question only becomes reviewable once it has been checked.
+      board.refresh();
     } catch {
       setError("I couldn't submit your answers. Let's try again.");
     } finally {
@@ -250,6 +263,19 @@ export function PracticePage() {
                     <p className="result-answer">Correct answer: {g.correct_answer}</p>
                   )}
                   {g.feedback && <RichText content={g.feedback} />}
+                  {board.enabled && (
+                    <div className="board-action-row">
+                      <BoardButton
+                        hasBoard={board.boardForQuestion(g.question_id) !== null}
+                        generating={
+                          board.open?.anchor === `question:${g.question_id}` &&
+                          board.open.phase === "generating"
+                        }
+                        disabled={busy}
+                        onClick={() => board.reviewQuestion(g.question_id)}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -282,6 +308,18 @@ export function PracticePage() {
           )}
         </div>
       </section>
+
+      {/* Lives outside the practice card so closing it returns the student to
+          exactly the question and typed answer they left. */}
+      <BoardModal
+        open={board.open !== null}
+        phase={board.open?.phase ?? "generating"}
+        board={board.open?.board ?? null}
+        sessionId={id}
+        voice={voicePlayback}
+        onClose={board.close}
+        onRetry={board.retry}
+      />
     </div>
   );
 }

@@ -182,6 +182,145 @@ export interface LessonSummaryResponse {
   summary_text: string | null;
 }
 
+// ---- Visual board explanations ----
+// Mirrors app/schemas/board.py. The model supplies parameters (slope, numerator,
+// dimensions) and the renderer computes the geometry, so a drawing can never
+// disagree with the numbers it was built from.
+
+/** Where a board came from. There is deliberately no board while a student is
+ * still answering a practice question — that is theirs to work through. */
+export type BoardKind = "lesson_intro" | "chat" | "practice_review";
+
+export interface BoardStepItem {
+  math: string; // LaTeX without $ delimiters
+  operation: string | null;
+  note: string | null;
+  emphasis: "none" | "highlight" | "underline" | "circle" | "strike";
+  emphasis_tone: "neutral" | "good" | "bad";
+}
+
+interface BoardBlockBase {
+  id: string;
+  caption: string; // also the SVG <title> / accessible description
+  /** What the tutor says while this block is written. Drives both the spoken
+   * narration and the caption bar. */
+  narration: string;
+}
+
+export interface BoardStepsBlock extends BoardBlockBase {
+  kind: "steps";
+  items: BoardStepItem[];
+}
+
+export interface BoardCalloutBlock extends BoardBlockBase {
+  kind: "callout";
+  tone: "insight" | "warning" | "common_mistake";
+  text: string;
+}
+
+export interface BoardExpressionCompareBlock extends BoardBlockBase {
+  kind: "expression_compare";
+  left: string;
+  right: string;
+  relation: "<" | ">" | "=" | "≈";
+  left_label: string | null;
+  right_label: string | null;
+  rewrite_left: string | null;
+  rewrite_right: string | null;
+}
+
+export interface BoardFractionBar {
+  numerator: number;
+  denominator: number;
+  label: string | null;
+}
+
+export interface BoardFractionBarsBlock extends BoardBlockBase {
+  kind: "fraction_bars";
+  bars: BoardFractionBar[];
+}
+
+export interface BoardNumberLinePoint {
+  value: number;
+  label: string | null;
+  style: "dot" | "open" | "filled";
+}
+
+export interface BoardNumberLineBlock extends BoardBlockBase {
+  kind: "number_line";
+  min: number;
+  max: number;
+  tick: number;
+  points: BoardNumberLinePoint[];
+  interval: {
+    start: number | null;
+    end: number | null;
+    inclusive_start: boolean;
+    inclusive_end: boolean;
+  } | null;
+}
+
+export interface BoardCoordinatePlaneBlock extends BoardBlockBase {
+  kind: "coordinate_plane";
+  x_min: number;
+  x_max: number;
+  y_min: number;
+  y_max: number;
+  lines: { slope: number; intercept: number; label: string | null }[];
+  points: { x: number; y: number; label: string | null }[];
+  slope_triangle: number | null;
+}
+
+export interface BoardGeometryFigureBlock extends BoardBlockBase {
+  kind: "geometry_figure";
+  shape: "triangle" | "rectangle" | "circle";
+  dimensions: Record<string, number>;
+  labels: { target: string; text: string }[];
+  right_angle_at: string | null;
+}
+
+export type BoardBlock =
+  | BoardStepsBlock
+  | BoardCalloutBlock
+  | BoardExpressionCompareBlock
+  | BoardFractionBarsBlock
+  | BoardNumberLineBlock
+  | BoardCoordinatePlaneBlock
+  | BoardGeometryFigureBlock;
+
+export interface BoardSpec {
+  title: string;
+  intro: string;
+  blocks: BoardBlock[];
+  final_answer: string | null;
+}
+
+export interface BoardSummary {
+  id: number;
+  kind: BoardKind;
+  /** Exactly one of these is set, depending on kind. */
+  message_id: number | null;
+  question_id: number | null;
+  title: string;
+  created_at: string | null;
+}
+
+export interface BoardListResponse {
+  /** False when the feature flag is off — the frontend has no flag system, so
+   * the capability arrives as data and the action simply isn't rendered. */
+  enabled: boolean;
+  boards: BoardSummary[];
+}
+
+export interface BoardResponse {
+  id: number;
+  kind: BoardKind;
+  message_id: number | null;
+  question_id: number | null;
+  spec: BoardSpec;
+  created_at: string | null;
+}
+
 // ---- Progress / legacy types ----
 
 export interface RecentSession {

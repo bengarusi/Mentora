@@ -1,12 +1,14 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { advancePhase, setLessonDifficulty } from "../api/tutor";
+import { BoardModal } from "../components/BoardModal";
 import { ChatComposer } from "../components/ChatComposer";
 import { ChatWindow } from "../components/ChatWindow";
 import { LearningPathSidebar } from "../components/LearningPathSidebar";
 import { TeacherAvatar } from "../components/TeacherAvatar";
+import { useBoardExplanation } from "../hooks/useBoardExplanation";
 import { useTutorChat } from "../hooks/useTutorChat";
-import type { DifficultyLevel, LessonPhase } from "../types";
+import type { DifficultyLevel, LessonPhase, Message } from "../types";
 
 const NEXT_DIFFICULTY: Record<DifficultyLevel, DifficultyLevel | null> = {
   easy: "medium",
@@ -66,6 +68,63 @@ export function LessonPage() {
     toggleRecording,
     handleVoicePlaybackToggle,
   } = useTutorChat(id);
+
+  const board = useBoardExplanation(id);
+  const introAttemptedRef = useRef(false);
+
+  // The lesson opens on the board: once the student has picked a difficulty and
+  // the tutor has said something, the explanation is delivered as a narrated
+  // board rather than only as a wall of text. Guarded so it happens once per
+  // lesson — on a later visit the board already exists and is replayed from the
+  // card in the transcript instead of ambushing the student again.
+  const lessonIntroBoard = board.summaries.find((b) => b.kind === "lesson_intro");
+  useEffect(() => {
+    if (!board.enabled || introAttemptedRef.current) return;
+    if (session?.phase !== "teaching" || !session.difficulty) return;
+    if (lessonIntroBoard || messages.length === 0) return;
+    introAttemptedRef.current = true;
+    board.teachOnBoard();
+  }, [board, session?.phase, session?.difficulty, lessonIntroBoard, messages.length]);
+
+  /** Ask for a board about whatever the lesson is on right now.
+   *
+   * The focus is the tail of the conversation rather than the student's last
+   * message: when the tutor has just asked "what is 3 times 4?" the student
+   * presses this without replying, so their last message is unrelated — that
+   * mistake made the board re-teach the topic instead of the question. */
+  const handleExplainOnBoard = useCallback(() => {
+    const recent = messages
+      .filter((m) => m.content.trim())
+      .slice(-3)
+      .map((m) => `${m.role === "tutor" ? "Tutor" : "Student"}: ${m.content}`)
+      .join("\n");
+    board.teachOnBoard(recent || "explain this part of the lesson on the board");
+  }, [board, messages]);
+
+  /** The replay card under a tutor turn that has a board. */
+  const boardCardFor = useCallback(
+    (message: Message) => {
+      const summary = board.boardForMessage(message.id);
+      if (!summary) return null;
+      return (
+        <button
+          type="button"
+          className="board-card"
+          onClick={() => board.replayBoard(summary.id)}
+        >
+          <span className="material-symbols-outlined" aria-hidden="true">
+            draw
+          </span>
+          <span>
+            <span className="board-card-title">{summary.title}</span>
+            <br />
+            <span className="board-card-hint">Watch it on the board again</span>
+          </span>
+        </button>
+      );
+    },
+    [board]
+  );
 
   // A Homework Help session has no phase ladder, so the lesson UI can't drive
   // it — send it to its own page rather than rendering a dead screen.
@@ -153,7 +212,7 @@ export function LessonPage() {
       />
 
       <section className="chat-main">
-        <ChatWindow messages={messages} />
+        <ChatWindow messages={messages} footerFor={boardCardFor} />
 
         {isTeaching && pickingDifficulty && (
           <div className="quick-actions">
@@ -197,6 +256,19 @@ export function LessonPage() {
                 disabled={busy}
               >
                 Increase difficulty
+              </button>
+            )}
+            {board.enabled && (
+              <button
+                type="button"
+                className="pill-button pressable-button"
+                onClick={handleExplainOnBoard}
+                disabled={busy}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  draw
+                </span>
+                Explain on board
               </button>
             )}
             <button
@@ -346,6 +418,16 @@ export function LessonPage() {
         </div>
 
       </aside>
+
+      <BoardModal
+        open={board.open !== null}
+        phase={board.open?.phase ?? "generating"}
+        board={board.open?.board ?? null}
+        sessionId={id}
+        voice={voicePlayback}
+        onClose={board.close}
+        onRetry={board.retry}
+      />
     </div>
   );
 }
