@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_student, get_tutor_service
@@ -24,10 +24,14 @@ def create_new_session(
 
 @router.get("/", response_model=list[SessionResponse])
 def list_my_sessions(
+    limit: int | None = Query(default=None, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     student: Student = Depends(get_current_student),
 ):
-    return SessionRepository(db).get_lesson_list_for_student(student.id)
+    return SessionRepository(db).get_lesson_list_for_student(
+        student.id, limit=limit, offset=offset
+    )
 
 
 @router.get("/{session_id}", response_model=SessionResponse)

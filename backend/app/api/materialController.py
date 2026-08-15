@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 
 from app.api.dependencies import (
@@ -122,9 +122,13 @@ async def upload_study_material(
 def list_study_materials(
     subject: str | None = None,
     topic: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     materials: MaterialService = Depends(get_material_service),
 ):
-    rows = materials.list_study_materials(subject=subject, topic=topic)
+    rows = materials.list_study_materials(
+        subject=subject, topic=topic, limit=limit, offset=offset
+    )
     return _to_list_response(rows, materials)
 
 

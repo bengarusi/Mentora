@@ -206,10 +206,19 @@ class MaterialService:
     # ---- reads ----
 
     def list_study_materials(
-        self, *, subject: str | None = None, topic: str | None = None
+        self,
+        *,
+        subject: str | None = None,
+        topic: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[StudyMaterial]:
         return self.materials.list_study_materials(
-            self.student.id, subject=subject, topic=topic
+            self.student.id,
+            subject=subject,
+            topic=topic,
+            limit=limit,
+            offset=offset,
         )
 
     def update_material(

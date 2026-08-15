@@ -1,7 +1,9 @@
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.enums import MessageRole, SessionMode
 from app.models.message import Message
+from app.models.material import StudyMaterial
 from app.models.session import LessonSession
 from app.repositories.base import BaseRepository
 
@@ -11,7 +13,12 @@ class SessionRepository(BaseRepository[LessonSession]):
         super().__init__(db, LessonSession)
 
     def get_lesson_list_for_student(
-        self, student_id: int, mode: SessionMode | None = SessionMode.LESSON
+        self,
+        student_id: int,
+        mode: SessionMode | None = SessionMode.LESSON,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[LessonSession]:
         """Sessions for a student, newest first.
 
@@ -24,7 +31,12 @@ class SessionRepository(BaseRepository[LessonSession]):
         )
         if mode is not None:
             query = query.filter(LessonSession.mode == mode.value)
-        return query.order_by(LessonSession.created_at.desc()).all()
+        query = query.order_by(LessonSession.created_at.desc(), LessonSession.id.desc())
+        if offset:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def get_homework_sessions_with_activity(
         self, student_id: int
@@ -39,18 +51,30 @@ class SessionRepository(BaseRepository[LessonSession]):
         activity. Those must not show up as something to "pick up where you
         left off"; this is the only place that distinction is drawn, so the
         empty ones are filtered here rather than hidden ad hoc in the UI."""
+        has_student_message = (
+            self.db.query(Message.id)
+            .filter(
+                Message.session_id == LessonSession.id,
+                Message.role == MessageRole.STUDENT.value,
+            )
+            .exists()
+        )
+        has_uploaded_file = (
+            self.db.query(StudyMaterial.id)
+            .filter(
+                StudyMaterial.session_id == LessonSession.id,
+                StudyMaterial.student_id == student_id,
+            )
+            .exists()
+        )
         return (
             self.db.query(LessonSession)
             .filter(
                 LessonSession.student_id == student_id,
                 LessonSession.mode == SessionMode.HOMEWORK.value,
-                LessonSession.id.in_(
-                    self.db.query(Message.session_id).filter(
-                        Message.role == MessageRole.STUDENT.value
-                    )
-                ),
+                or_(has_student_message, has_uploaded_file),
             )
-            .order_by(LessonSession.created_at.desc())
+            .order_by(LessonSession.created_at.desc(), LessonSession.id.desc())
             .all()
         )
 

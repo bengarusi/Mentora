@@ -143,13 +143,21 @@ def test_homework_sessions_can_be_listed_for_resuming(api):
     assert listed[0]["mode"] == SessionMode.HOMEWORK.value
 
 
-def test_homework_session_with_no_reply_is_not_listed(api):
-    """Regression: clicking 'Start Homework Help' unconditionally created a
-    session. A student who clicks it, uploads a file, but never actually
-    chats (or just clicks it repeatedly while exploring) ended up with a pile
-    of empty sessions all shown as 'pick up where you left off'."""
+def test_homework_session_with_an_uploaded_file_is_listed_without_a_reply(api):
+    """An uploaded homework file is historical student data even when the
+    student never sent a chat message after analysis."""
     headers = auth_headers(api)
-    _start_homework(api, headers)  # uploads + analyzes, but no student reply
+    homework = _start_homework(api, headers)
+
+    listed = api.get("/tutor/homework", headers=headers).json()
+    assert [session["id"] for session in listed] == [homework["id"]]
+
+
+def test_truly_empty_homework_session_is_not_listed(api):
+    """A bare click that created neither a file nor a conversation remains
+    hidden from resumable homework history."""
+    headers = auth_headers(api)
+    api.post("/tutor/homework", json={"subject": "math"}, headers=headers)
 
     assert api.get("/tutor/homework", headers=headers).json() == []
 

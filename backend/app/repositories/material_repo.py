@@ -21,7 +21,13 @@ class MaterialRepository(BaseRepository[StudyMaterial]):
         )
 
     def list_study_materials(
-        self, student_id: int, *, subject: str | None = None, topic: str | None = None
+        self,
+        student_id: int,
+        *,
+        subject: str | None = None,
+        topic: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[StudyMaterial]:
         query = self.db.query(StudyMaterial).filter(
             StudyMaterial.student_id == student_id,
@@ -31,7 +37,12 @@ class MaterialRepository(BaseRepository[StudyMaterial]):
             query = query.filter(StudyMaterial.subject == subject)
         if topic:
             query = query.filter(StudyMaterial.topic == topic)
-        return query.order_by(StudyMaterial.created_at.desc()).all()
+        query = query.order_by(StudyMaterial.created_at.desc(), StudyMaterial.id.desc())
+        if offset:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def chunk_counts_for(self, material_ids: list[int]) -> dict[int, int]:
         """Chunk counts for many materials in one query.
