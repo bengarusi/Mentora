@@ -35,6 +35,22 @@ def test_reasoned_answer_with_one_numeric_candidate_is_checked_deterministically
     assert result.authoritative is True
 
 
+def test_terminal_result_clause_is_checked_deterministically_without_llm():
+    evaluator = AnswerEvaluator(RaisingGrader())
+    outline = [HomeworkExercise("exercise-1", "What is 25% of 80?")]
+
+    result = evaluator.evaluate(
+        "25% of 80 is 20",
+        "exercise-1",
+        outline,
+    )
+
+    assert result.verdict is True
+    assert result.authoritative is True
+    assert result.correct_answer == "20"
+    assert result.tool_used == "chat_arithmetic"
+
+
 def test_model_extraction_is_not_part_of_the_authoritative_tool_schema(db_session):
     from app.agent.registry import ToolRegistry
     from app.models.session import LessonSession

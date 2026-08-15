@@ -13,6 +13,11 @@ from app.math.sympy_service import SymPyMathService
 _NUMERIC_CANDIDATE = re.compile(
     r"(?<![\w/])-?\d+(?:\s+\d+\s*/\s*\d+|\s*/\s*\d+|\.\d+|%)?(?![\w/])"
 )
+_TERMINAL_RESULT_CLAUSE = re.compile(
+    rf"(?:\bis\b|\bequals?\b|=)\s*(?P<value>{_NUMERIC_CANDIDATE.pattern})"
+    r"\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
 
 
 class ChatGrader(Protocol):
@@ -32,6 +37,14 @@ def _numeric_candidates(text: str) -> tuple[str, ...]:
             if canonical not in candidates:
                 candidates.append(canonical)
     return tuple(candidates)
+
+
+def _terminal_result_candidate(text: str) -> str | None:
+    match = _TERMINAL_RESULT_CLAUSE.search(text)
+    if match is None:
+        return None
+    parsed = parse_to_fraction(match.group("value"))
+    return canonical_fraction_str(parsed) if parsed is not None else None
 
 
 class AnswerEvaluator:
@@ -59,7 +72,11 @@ class AnswerEvaluator:
             )
 
         raw_candidates = _numeric_candidates(student_answer)
-        raw_candidate = raw_candidates[0] if len(raw_candidates) == 1 else None
+        raw_candidate = (
+            raw_candidates[0]
+            if len(raw_candidates) == 1
+            else _terminal_result_candidate(student_answer)
+        )
         candidate = raw_candidate or student_answer
 
         deterministic = None
