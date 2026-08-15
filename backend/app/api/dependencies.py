@@ -10,6 +10,7 @@ from app.llm.factory import get_llm_provider
 from app.llm.provider import LLMProvider
 from app.models.student import Student
 from app.repositories.student_repo import StudentRepository
+from app.services.board_service import BoardService
 from app.services.material_service import MaterialService
 from app.services.tutor_service import TutorService
 from app.services.voice_service import VoiceService
@@ -47,6 +48,14 @@ def get_tutor_service(
     llm: LLMProvider = Depends(get_llm),
 ) -> TutorService:
     return TutorService(db, llm, student)
+
+
+def get_board_service(
+    db: Session = Depends(get_db),
+    student: Student = Depends(get_current_student),
+    llm: LLMProvider = Depends(get_llm),
+) -> BoardService:
+    return BoardService(db, llm, student)
 
 
 def get_voice_service() -> VoiceService:

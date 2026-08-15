@@ -10,6 +10,7 @@ class ScriptedAgentLLM(FakeLLMProvider):
     """Boundary fake: each call consumes one complete scripted assistant step."""
 
     def __init__(self, turns: list[AssistantTurn]):
+        super().__init__()
         self.turns = list(turns)
         self.calls: list[dict] = []
 

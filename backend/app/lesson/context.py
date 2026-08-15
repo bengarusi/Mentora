@@ -111,7 +111,31 @@ class LessonContext:
             mode=getattr(self.session, "mode", SessionMode.LESSON.value),
             material_excerpts=self._retrieve_excerpts(retrieval_query),
             homework_text=self._homework_text(),
+            board_digests=self._board_digests(),
         )
+
+    def _board_digests(self) -> list[str]:
+        """Recall the boards recently shown in this session.
+
+        Imported lazily and guarded: a board that can no longer be parsed must
+        degrade to "the tutor forgot that one", never break the chat turn."""
+        if not settings.BOARD_EXPLANATION_ENABLED:
+            return []
+        from app.board.digest import digest_for
+        from app.repositories.board_repo import BoardExplanationRepository
+        from app.schemas.board import BoardSpec
+
+        rows = BoardExplanationRepository(self.db).list_for_session(self.session.id)
+        digests = []
+        for row in rows[-settings.BOARD_DIGEST_LIMIT :]:
+            try:
+                spec = BoardSpec.model_validate(row.content_json)
+            except Exception:  # noqa: BLE001 - a stale board is not a broken chat
+                continue
+            digests.append(
+                digest_for(spec, char_budget=settings.BOARD_DIGEST_CHAR_BUDGET)
+            )
+        return digests
 
     def _retrieve_excerpts(self, query: str | None) -> list[MaterialExcerpt]:
         """Relevant passages from the student's study materials, or nothing.

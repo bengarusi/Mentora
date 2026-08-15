@@ -44,8 +44,10 @@ class OpenAIProvider(LLMProvider):
         )
         self.model = settings.OPENAI_MODEL
 
-    def _is_reasoning_model(self) -> bool:
-        return "gpt-5" in (self.model or "")
+    def _is_reasoning_model(self, model: str | None = None) -> bool:
+        """Token-budget policy follows the model actually being called, which is
+        not always the tutor brain (board generation has its own setting)."""
+        return "gpt-5" in (model or self.model or "")
 
     def _agent_token_budget(self) -> dict[str, int]:
         # Tool calls and the requested concise final reply do not need an
@@ -211,12 +213,14 @@ class OpenAIProvider(LLMProvider):
         operation: str = "llm_call",
         max_tokens: int | None = None,
         temperature: float | None = None,
+        model: str | None = None,
     ) -> str:
         # Metadata only — never log prompt/response text.
         start = time.perf_counter()
+        model = model or self.model
         try:
             kwargs: dict = {
-                "model": self.model,
+                "model": model,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -225,14 +229,14 @@ class OpenAIProvider(LLMProvider):
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
             if max_tokens is not None:
-                if self._is_reasoning_model():
+                if self._is_reasoning_model(model):
                     # gpt-5 uses max_completion_tokens (not max_tokens), and that
                     # budget covers internal reasoning tokens too — add a 1500-token
                     # buffer so reasoning doesn't consume the entire allowance.
                     kwargs["max_completion_tokens"] = max_tokens + 1500
                 else:
                     kwargs["max_tokens"] = max_tokens
-            if temperature is not None and not self._is_reasoning_model():
+            if temperature is not None and not self._is_reasoning_model(model):
                 kwargs["temperature"] = temperature
             response = self.client.chat.completions.create(**kwargs)
             content = response.choices[0].message.content or ""
@@ -240,7 +244,7 @@ class OpenAIProvider(LLMProvider):
             log.info(
                 "llm call op=%s model=%s duration_ms=%.1f resp_chars=%d",
                 operation,
-                self.model,
+                model,
                 duration_ms,
                 len(content),
             )
@@ -252,7 +256,7 @@ class OpenAIProvider(LLMProvider):
             log.error(
                 "llm call failed op=%s model=%s duration_ms=%.1f error=%s",
                 operation,
-                self.model,
+                model,
                 duration_ms,
                 exc,
             )
@@ -395,6 +399,24 @@ class OpenAIProvider(LLMProvider):
             raise LLMError(f"Expected 3 practice questions, got {len(questions)}")
         questions.sort(key=lambda q: q.difficulty)
         return questions
+
+    def generate_board_explanation(self, system: str, user: str) -> dict:
+        raw = self._call_llm(
+            system,
+            user,
+            json_mode=True,
+            operation="board_explanation",
+            max_tokens=1600,
+            temperature=0.4,
+            model=settings.OPENAI_BOARD_MODEL,
+        )
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            raise LLMError(f"Could not parse board JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise LLMError("Board response was not a JSON object")
+        return data
 
     def grade_answer(
         self,
