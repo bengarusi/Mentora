@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getProgress, getProgressMap } from "../api/progress";
+import { listSessions } from "../api/sessions";
 import { MATH_CURRICULUM } from "../data/mathCurriculum";
 import { ScoreBadge } from "../components/ScoreBadge";
-import type { ProgressMap, StudentProgress } from "../types";
+import type { ProgressMap, Session, StudentProgress } from "../types";
 
 const STATUS_LABEL: Record<string, string> = {
   mastered: "Mastered",
@@ -59,14 +60,20 @@ function mergeWithCurriculum(map: ProgressMap | null): MergedTopic[] {
 export function ProgressPage() {
   const [progress, setProgress] = useState<StudentProgress | null>(null);
   const [map, setMap] = useState<ProgressMap | null>(null);
+  const [lessons, setLessons] = useState<Session[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getProgress().then(setProgress).catch(() => null);
     getProgressMap().then(setMap).catch(() => null);
+    listSessions().then(setLessons).catch(() => null);
   }, []);
 
   const topics = useMemo(() => mergeWithCurriculum(map), [map]);
+  const recentById = useMemo(
+    () => new Map(progress?.recent.map((row) => [row.session_id, row]) ?? []),
+    [progress]
+  );
 
   function toggle(topicId: string) {
     setOpen((prev) => {
@@ -172,29 +179,38 @@ export function ProgressPage() {
         );
       })}
 
-      <p className="section-label">Recent Lessons</p>
-      {progress.recent.length === 0 && (
+      <p className="section-label">Lesson History</p>
+      {lessons.length === 0 && (
         <p className="muted">No lessons yet — pick a topic to get started!</p>
       )}
-      {progress.recent.map((s) => (
-        <div key={s.session_id} className="progress-recent-row">
-          <div>
-            <div className="recent-title">{s.topic}</div>
-            <div className="recent-sub">{s.goal_text}</div>
+      {lessons.map((s) => {
+        const result = recentById.get(s.id);
+        return (
+          <div
+            key={s.id}
+            className="progress-recent-row"
+            data-session-id={s.id}
+          >
+            <div>
+              <div className="recent-title">{s.topic}</div>
+              <div className="recent-sub">{s.goal_text}</div>
+            </div>
+            <div className="progress-recent-meta">
+              {result?.score !== null &&
+                result?.score !== undefined &&
+                result.total_questions !== null && (
+                  <span className="muted">
+                    {result.score}/{result.total_questions}
+                  </span>
+                )}
+              <ScoreBadge level={result?.success_level ?? null} />
+              <Link to={`/lesson/${s.id}`} className="back-link">
+                Open
+              </Link>
+            </div>
           </div>
-          <div className="progress-recent-meta">
-            {s.score !== null && s.total_questions !== null && (
-              <span className="muted">
-                {s.score}/{s.total_questions}
-              </span>
-            )}
-            <ScoreBadge level={s.success_level} />
-            <Link to={`/lesson/${s.session_id}`} className="back-link">
-              Open
-            </Link>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

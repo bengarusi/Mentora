@@ -76,7 +76,7 @@ export function HomeworkSessionRow({ session, onOpen }: HomeworkSessionRowProps)
   }, [session.id]);
 
   return (
-    <div className="homework-session-row">
+    <div className="homework-session-row" data-session-id={session.id}>
       <button
         type="button"
         className="homework-session-main"
@@ -137,6 +137,7 @@ export function HomeworkSessionRow({ session, onOpen }: HomeworkSessionRowProps)
             key={file.id}
             type="button"
             className="homework-file-link"
+            data-material-id={file.id}
             title={file.title || file.filename}
             onClick={(e) => {
               e.stopPropagation();

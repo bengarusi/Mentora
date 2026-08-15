@@ -38,7 +38,7 @@ export function MaterialCard({
     onRetry && (material.status === "unsupported" || material.status === "failed");
 
   return (
-    <article className="material-card">
+    <article className="material-card" data-material-id={material.id}>
       <div className="material-card-head">
         <span className="material-symbols-outlined material-card-icon">
           description
