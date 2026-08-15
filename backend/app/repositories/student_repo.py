@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.student import Student
@@ -9,4 +10,9 @@ class StudentRepository(BaseRepository[Student]):
         super().__init__(db, Student)
 
     def get_by_email(self, email: str) -> Student | None:
-        return self.db.query(Student).filter(Student.email == email).first()
+        normalized = email.strip().lower()
+        return (
+            self.db.query(Student)
+            .filter(func.lower(func.trim(Student.email)) == normalized)
+            .first()
+        )

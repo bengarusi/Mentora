@@ -41,6 +41,26 @@ def test_login_returns_token_and_student(client):
     assert body["student"]["email"] == "kid@example.com"
 
 
+def test_login_email_lookup_is_case_and_whitespace_insensitive(client):
+    register(client, email="kid@example.com")
+
+    resp = client.post(
+        "/auth/login",
+        data={"username": "  KID@EXAMPLE.COM  ", "password": "secret123"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["student"]["email"] == "kid@example.com"
+
+
+def test_register_rejects_normalized_duplicate_email(client):
+    register(client, email="kid@example.com")
+
+    resp = register(client, email="KID@EXAMPLE.COM")
+
+    assert resp.status_code == 400
+
+
 def test_login_with_wrong_password_fails(client):
     register(client)
     resp = client.post(

@@ -9,8 +9,9 @@ from app.schemas.student import StudentRegister
 
 def create_student(db: Session, student_data: StudentRegister) -> Student:
     repo = StudentRepository(db)
+    normalized_email = str(student_data.email).strip().lower()
 
-    if repo.get_by_email(student_data.email):
+    if repo.get_by_email(normalized_email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
@@ -18,7 +19,7 @@ def create_student(db: Session, student_data: StudentRegister) -> Student:
 
     student = Student(
         full_name=student_data.full_name,
-        email=student_data.email,
+        email=normalized_email,
         password_hash=hash_password(student_data.password),
         age=student_data.age,
         grade=student_data.grade,
