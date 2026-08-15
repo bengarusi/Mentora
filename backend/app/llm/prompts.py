@@ -945,6 +945,7 @@ def board_lesson_prompt(
         # re-teaches the topic instead of answering what was actually asked.
         f"{asked}{retry}{background if focus else heading}"
         f"{_history(ctx)}\n"
+        f"{_materials(ctx)}\n"
         f"{_BOARD_BLOCKS}\n"
         "Return exactly this shape:\n"
         "{\n"
