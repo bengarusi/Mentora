@@ -30,6 +30,24 @@ class Settings(BaseSettings):
     # homework, scanned worksheets). Must be a vision-capable model.
     OPENAI_VISION_MODEL: str = "gpt-4o-mini"
 
+    # ---- visual board explanations ----
+    # Off by default until enabled in a target environment. Practice is fully
+    # functional without it: the list endpoint reports enabled=false and the UI
+    # renders no board action, while the generate/fetch endpoints 404.
+    BOARD_EXPLANATION_ENABLED: bool = False
+    # Caps how much of one board we keep. Bounds modal length and prompt cost;
+    # blocks beyond the budget are dropped, never a reason to fail a board.
+    BOARD_MAX_BLOCKS: int = Field(default=6, ge=1, le=12)
+    # Board generation is one structured JSON call, kept on its own model setting
+    # so it can be upgraded independently of the tutor brain.
+    OPENAI_BOARD_MODEL: str = "gpt-5.4-mini"
+    # How much of the boards already shown may be recalled into a later chat
+    # prompt. Only a compact digest is carried, never the full spec.
+    BOARD_DIGEST_CHAR_BUDGET: int = 700
+    # How many recent boards the tutor keeps in mind. Two covers "the one we just
+    # looked at" and "the one before"; more is prompt cost for little gain.
+    BOARD_DIGEST_LIMIT: int = 2
+
     # ---- study materials / homework uploads ----
     MATERIAL_STORAGE_DIR: str = "storage/materials"
     MATERIAL_MAX_UPLOAD_MB: int = 20
