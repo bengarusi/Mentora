@@ -1,11 +1,13 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { RichText } from "./RichText";
 import type { Message } from "../types";
 
 export const MessageBubble = memo(function MessageBubble({
   message,
+  footer,
 }: {
   message: Message;
+  footer?: ReactNode;
 }) {
   const isTutor = message.role === "tutor";
   return (
@@ -21,6 +23,7 @@ export const MessageBubble = memo(function MessageBubble({
         ) : (
           <RichText content={message.content} />
         )}
+        {footer}
       </div>
     </div>
   );

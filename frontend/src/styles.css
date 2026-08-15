@@ -2392,3 +2392,385 @@ textarea {
     order: 4;
   }
 }
+
+/* ---- Modal (the app's only dialog primitive) ------------------------------
+   Sits at z-index 100, well clear of .topbar's 20. Full-screen below 760px,
+   the same breakpoint that collapses the sidebar — on a phone a centred card
+   would leave too little room for a board. */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(11, 28, 48, 0.45);
+  animation: modal-fade 120ms ease-out;
+}
+
+.modal-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  max-height: 88vh;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-strong);
+  overflow: hidden;
+  animation: modal-rise 160ms ease-out;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--color-text);
+}
+
+.modal-close {
+  flex-shrink: 0;
+  padding: 0.25rem;
+  line-height: 1;
+}
+
+.modal-body {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+}
+
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 760px) {
+  .modal-backdrop { padding: 0; }
+  .modal-panel {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-panel { animation: none; }
+}
+
+/* ---- Visual board explanations -------------------------------------------
+   A board should read as a real board: warm paper rather than UI white, serif
+   maths (KaTeX already renders Computer Modern), and marks that look drawn.
+   Content is written on, block by block, paced by the tutor's narration. */
+
+:root {
+  --board-paper: #fbf8f1;
+  --board-paper-edge: #efe7d7;
+  --board-ink: #1b1a17;
+  --board-ink-soft: #5d574c;
+  --board-ink-accent: #6b38d4;
+  --board-ink-good: #128a55;
+  --board-ink-bad: #c8382f;
+}
+
+.board-action-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.result-card .board-action-row { justify-content: flex-start; }
+.board-button { gap: 0.4rem; }
+
+.board-loading {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+}
+
+.board-loading-text {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.agent-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-primary-soft);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: agent-spin 0.8s linear infinite;
+}
+
+/* ---- stage: board left, teacher right, captions across the bottom ---- */
+
+.board-stage {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  grid-template-areas: "surface teacher" "captions captions";
+  gap: 1rem;
+  align-items: start;
+}
+
+.board-surface {
+  grid-area: surface;
+  min-height: 340px;
+  padding: 1.5rem 1.75rem;
+  background:
+    radial-gradient(120% 90% at 20% 0%, #fffdf8 0%, var(--board-paper) 60%);
+  border: 1px solid var(--board-paper-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 #fff, var(--shadow-soft);
+  color: var(--board-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  overflow-x: auto;
+}
+
+.board-heading {
+  margin: 0;
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 1.9rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--board-ink);
+}
+
+.board-teacher {
+  grid-area: teacher;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-low);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem;
+}
+
+.board-captions {
+  grid-area: captions;
+  margin: 0;
+  min-height: 3.2rem;
+  padding: 0.75rem 1rem;
+  background: rgba(11, 28, 48, 0.85);
+  color: #fff;
+  border-radius: var(--radius-md);
+  text-align: center;
+  font-size: 1.02rem;
+  line-height: 1.4;
+}
+
+/* ---- blocks ---- */
+
+.board-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* Written on, not faded in: each block arrives as the tutor reaches it. */
+  animation: board-write-in 380ms ease-out both;
+}
+
+.board-block-callout {
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: rgba(107, 56, 212, 0.08);
+}
+
+.board-block-callout:has(.warning) { background: rgba(130, 81, 0, 0.1); }
+.board-block-callout:has(.common_mistake) { background: rgba(200, 56, 47, 0.09); }
+
+@keyframes board-write-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.board-math .katex { font-size: 1.35em; }
+.board-math.large .katex { font-size: 1.7em; }
+.board-math p { margin: 0; }
+
+/* ---- steps ---- */
+
+.board-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.board-step.written {
+  animation: board-write-in 320ms ease-out both;
+}
+
+.board-step-body { min-width: 0; }
+
+/* The mark is absolutely positioned over the maths, so it has to be the
+   containing block and size to its content. */
+.board-step-math {
+  position: relative;
+  display: inline-block;
+}
+
+.board-step-op {
+  margin: 0.2rem 0 0;
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 1rem;
+  font-style: italic;
+  color: var(--board-ink-accent);
+}
+
+.board-step-note {
+  margin: 0.15rem 0 0;
+  font-size: 0.92rem;
+  color: var(--board-ink-soft);
+}
+
+/* ---- hand-drawn marks ---- */
+
+.board-mark {
+  position: absolute;
+  left: -4%;
+  width: 108%;
+  pointer-events: none;
+}
+
+.board-mark.underline { bottom: -0.45em; height: 0.5em; }
+.board-mark.strike { top: 0; height: 100%; }
+.board-mark.circle { top: -0.3em; height: calc(100% + 0.6em); }
+
+.board-mark path {
+  /* Long enough to cover any of the paths; animated to 0 so the stroke draws
+     itself on rather than appearing all at once. */
+  stroke-dasharray: 320;
+  stroke-dashoffset: 320;
+}
+
+.board-mark.drawn path {
+  animation: board-draw-mark 520ms ease-out 240ms forwards;
+}
+
+@keyframes board-draw-mark {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ---- callout ---- */
+
+.board-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.board-callout p { margin: 0; }
+
+/* ---- expression compare ---- */
+
+.board-compare { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.board-compare-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+}
+
+.board-compare-row.rewrite { opacity: 0.85; }
+
+.board-compare-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.board-compare-label { font-size: 0.82rem; color: var(--board-ink-soft); }
+
+.board-compare-relation {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 2rem;
+  color: var(--board-ink-accent);
+}
+
+/* ---- figures ---- */
+
+.board-figure {
+  width: 100%;
+  max-width: 460px;
+  height: auto;
+  align-self: center;
+}
+
+.board-final {
+  margin: 0;
+  padding: 0.7rem 1rem;
+  background: rgba(18, 138, 85, 0.12);
+  border-radius: var(--radius-md);
+  font-size: 1.05rem;
+}
+
+/* ---- inline board card in the chat transcript ---- */
+
+.board-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--board-paper);
+  border: 1px solid var(--board-paper-edge);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--board-ink);
+  width: 100%;
+}
+
+.board-card:hover { border-color: var(--color-primary); }
+
+.board-card-title { font-weight: 600; }
+.board-card-hint { font-size: 0.85rem; color: var(--board-ink-soft); }
+
+@media (max-width: 760px) {
+  .board-stage {
+    grid-template-columns: 1fr;
+    grid-template-areas: "teacher" "surface" "captions";
+  }
+  .board-teacher { max-height: 130px; }
+  .board-surface { padding: 1rem 1.1rem; min-height: 0; }
+  .board-heading { font-size: 1.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-block,
+  .board-step.written { animation: none; }
+  .board-mark path { stroke-dashoffset: 0; animation: none; }
+}

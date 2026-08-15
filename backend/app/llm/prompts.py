@@ -86,6 +86,24 @@ def _materials(ctx: TutorContext) -> str:
     )
 
 
+def _boards(ctx: TutorContext) -> str:
+    """Boards already shown in this lesson, so the tutor can be asked about them.
+
+    Only a compact digest is carried, never the full spec: coordinates and render
+    hints say nothing a conversation needs. Blocks are numbered, which is what
+    lets "I didn't understand step 2" resolve to something concrete."""
+    if not ctx.board_digests:
+        return ""
+    return (
+        "\n\nBOARDS YOU ALREADY DREW FOR THIS STUDENT:\n"
+        "You showed these on the whiteboard earlier in this lesson. If the student "
+        "refers to the board, a step, a mark, or something you circled or crossed "
+        "out, they mean one of these — answer from it directly and refer to the "
+        "numbered items the way they do. Do not claim you cannot see it.\n\n"
+        + "\n\n".join(ctx.board_digests)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Teaching phase
 # ---------------------------------------------------------------------------
@@ -229,6 +247,7 @@ def chat_prompt(
         "- Keep responses concise but well-structured.\n\n"
 
         "Now respond to the student."
+        + _boards(ctx)
         + _materials(ctx)
     )
 
@@ -778,4 +797,210 @@ def lesson_summary_prompt(
         + _history(ctx)
     )
 
+    return system, user
+
+
+# ---------------------------------------------------------------------------
+# Visual board explanation
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Visual board explanation
+# ---------------------------------------------------------------------------
+
+_BOARD_BLOCKS = (
+    "Available block types (use only these):\n"
+    '- steps: {"kind":"steps","id":"s1","caption":"...","narration":"...",'
+    '"items":[{"math":"3x + 5 = 20","operation":"subtract 5 from both sides",'
+    '"note":"optional aside","emphasis":"none|highlight|underline|circle|strike",'
+    '"emphasis_tone":"neutral|good|bad"}]}\n'
+    '- callout: {"kind":"callout","id":"c1","caption":"...","narration":"...",'
+    '"tone":"insight|warning|common_mistake","text":"..."}\n'
+    '- expression_compare: {"kind":"expression_compare","id":"e1","caption":"...",'
+    '"narration":"...","left":"\\\\frac{3}{4}","right":"\\\\frac{2}{3}",'
+    '"relation":"<|>|=","left_label":"...","right_label":"...",'
+    '"rewrite_left":"\\\\frac{9}{12}","rewrite_right":"\\\\frac{8}{12}"}\n'
+    '- fraction_bars: {"kind":"fraction_bars","id":"f1","caption":"...","narration":"...",'
+    '"bars":[{"numerator":3,"denominator":4,"label":"3/4"}]}\n'
+    '- number_line: {"kind":"number_line","id":"n1","caption":"...","narration":"...",'
+    '"min":0,"max":10,"tick":1,"points":[{"value":4,"label":"x","style":"dot|open|filled"}],'
+    '"interval":{"start":2,"end":8,"inclusive_start":true,"inclusive_end":false}}\n'
+    '- coordinate_plane: {"kind":"coordinate_plane","id":"p1","caption":"...","narration":"...",'
+    '"x_min":-1,"x_max":5,"y_min":-1,"y_max":11,'
+    '"lines":[{"slope":2,"intercept":1,"label":"y = 2x + 1"}],'
+    '"points":[{"x":0,"y":1,"label":"start"}],"slope_triangle":1}\n'
+    '- geometry_figure: {"kind":"geometry_figure","id":"g1","caption":"...","narration":"...",'
+    '"shape":"triangle|rectangle|circle","dimensions":{"base":6,"height":4},'
+    '"labels":[{"target":"base","text":"6 cm"}],"right_angle_at":"height"}\n\n'
+    "Block constraints:\n"
+    "- number_line and coordinate_plane: every point must sit inside the stated range.\n"
+    "- coordinate_plane: give lines as slope and intercept; the renderer draws them.\n"
+    "- fraction_bars: a bar's label must equal its own numerator/denominator.\n"
+    "- geometry_figure dimensions: triangle uses base/height/side_a/side_b/side_c, "
+    "rectangle uses width/height, circle uses radius/diameter.\n"
+    "- If a topic does not suit any picture block, return steps and a callout only.\n"
+)
+
+
+def _board_system(*, max_blocks: int, audience: str) -> str:
+    return (
+        "You are Mentora's tutor, standing at a whiteboard with one school student.\n"
+        "You return a JSON board: a short ordered set of blocks that get written on "
+        "the board one at a time while you talk the student through them.\n\n"
+        "Hard rules:\n"
+        "- Return ONLY valid JSON. No markdown fences. No commentary.\n"
+        "- Every board must contain exactly one 'steps' block.\n"
+        f"- Use at most {max_blocks} blocks. Fewer, clearer blocks are better.\n"
+        "- Math strings are LaTeX WITHOUT $ delimiters, e.g. \"\\\\frac{3}{4}\".\n"
+        "- Every block needs a unique short 'id', a plain-language 'caption' for a "
+        "student who cannot see it, and a 'narration'.\n"
+        "- 'narration' is what you SAY while that block appears. One or two short "
+        "spoken sentences, second person, warm and simple. It is read aloud, so no "
+        "LaTeX, no symbols, no markdown: say \"three x plus five\", not \"3x + 5\". "
+        "Say \"is less than\", not \"<\".\n"
+        "- Use the board marks a real teacher uses: 'underline' a term you are about "
+        "to work on, 'circle' things that belong together, 'strike' something being "
+        "cancelled, 'highlight' the key line. emphasis_tone 'good' for a correct "
+        "pairing, 'bad' for a wrong one, 'neutral' otherwise. Do not mark every step "
+        "— marks mean nothing if everything is marked.\n"
+        "- This is a WHITEBOARD, not a written explanation. Whenever the topic has a "
+        "natural picture, include one alongside the steps:\n"
+        "    fractions or comparing amounts -> fraction_bars and/or expression_compare\n"
+        "    inequalities, ranges, rounding, negative numbers -> number_line\n"
+        "    lines, slope, functions, coordinates -> coordinate_plane\n"
+        "    area, perimeter, angles, shapes -> geometry_figure\n"
+        "  Only fall back to steps plus a callout when no picture block fits.\n"
+        "- Never invent numbers. Use only values from the material or values you "
+        "derive from it.\n"
+        f"{audience}"
+    )
+
+
+def _board_audience(grade: str | None, age: int | None) -> str:
+    if not grade and not age:
+        return ""
+    who = ", ".join(
+        part for part in (f"grade {grade}" if grade else None, f"age {age}" if age else None) if part
+    )
+    return f"- The student is {who}. Pitch every word and example for them.\n"
+
+
+def board_lesson_prompt(
+    ctx: TutorContext,
+    *,
+    max_blocks: int,
+    focus: str | None = None,
+    retry_reason: str | None = None,
+) -> tuple[str, str]:
+    """Prompt for a board that teaches, rather than one that solves an exercise.
+
+    Used both to open a lesson on the board and for a mid-lesson request. The
+    difference between those is only how much conversation there is to react to,
+    which `_history` already carries, so one prompt serves both.
+    """
+    system = _board_system(
+        max_blocks=max_blocks, audience=_board_audience(ctx.grade, ctx.age)
+    )
+    system += (
+        "\nYou are TEACHING this idea, not marking work. Build the idea up from "
+        "something the student already knows, show it concretely, and end by "
+        "inviting them to try one themselves. Do not ask more than one question.\n"
+    )
+
+    goal = f"Lesson goal: {ctx.goal_text}\n" if ctx.goal_text else ""
+    subtopic = f"Precise focus of this lesson: {ctx.subtopic}\n" if ctx.subtopic else ""
+    asked = (
+        "\nTHE STUDENT PRESSED 'EXPLAIN ON BOARD' RIGHT HERE IN THE CONVERSATION:\n"
+        f"{focus}\n"
+        "Explain THAT — the exact thing being discussed at this moment. If you had "
+        "just asked them a question, show them how to work out THAT question. If "
+        "they asked about one step, explain THAT step.\n"
+        "Do NOT re-teach the topic from the beginning, and do NOT repeat the board "
+        "you drew when the lesson opened. They have already seen it; they are stuck "
+        "on something more specific now.\n"
+        if focus
+        else ""
+    )
+    retry = (
+        f"\nYour previous attempt was rejected because: {retry_reason}. Fix that and try again.\n"
+        if retry_reason
+        else ""
+    )
+
+    background = (
+        f"Background (context only, NOT the subject of this board):\n"
+        f"  Subject: {ctx.subject}\n  Topic: {ctx.topic}\n"
+        f"{subtopic}{goal}"
+        f"  Difficulty the student chose: {ctx.difficulty or 'medium'}\n"
+    )
+    heading = (
+        f"Subject: {ctx.subject}\nTopic: {ctx.topic}\n"
+        f"{subtopic}{goal}"
+        f"Difficulty the student chose: {ctx.difficulty or 'medium'}\n"
+    )
+
+    user = (
+        # With a focus, the brief comes first and the lesson metadata is demoted
+        # to background: leading with the subtopic anchors the model to it and it
+        # re-teaches the topic instead of answering what was actually asked.
+        f"{asked}{retry}{background if focus else heading}"
+        f"{_history(ctx)}\n"
+        f"{_BOARD_BLOCKS}\n"
+        "Return exactly this shape:\n"
+        "{\n"
+        '  "title": "short heading naming what THIS board explains, not the lesson topic",\n'
+        '  "intro": "one friendly spoken sentence to open with",\n'
+        '  "blocks": [ ... ],\n'
+        '  "final_answer": null\n'
+        "}\n"
+    )
+    return system, user
+
+
+def board_review_prompt(
+    *,
+    question_text: str,
+    correct_answer: str | None,
+    solution_steps: str | None,
+    student_answer: str | None,
+    feedback: str | None,
+    max_blocks: int,
+    retry_reason: str | None = None,
+) -> tuple[str, str]:
+    """Prompt for a board reviewing one question the student has already been
+    graded on.
+
+    The answer is supplied because the student has already seen it — this board
+    exists to explain where their thinking went wrong, not to withhold anything.
+    """
+    system = _board_system(max_blocks=max_blocks, audience="")
+    system += (
+        "\nThe student has already answered this question and seen whether they "
+        "were right, so show the full worked solution. Set 'final_answer'. If their "
+        "answer was wrong, use the board to show where the thinking went astray — "
+        "mark the step where it happened. Be kind about it.\n"
+    )
+
+    known = f"The verified correct answer is: {correct_answer}\n" if correct_answer else ""
+    steps_hint = f"A reference solution:\n{solution_steps}\n\n" if solution_steps else ""
+    attempt = f"The student answered: {student_answer}\n" if student_answer else ""
+    given = f"Feedback they were given: {feedback}\n" if feedback else ""
+    retry = (
+        f"\nYour previous attempt was rejected because: {retry_reason}. Fix that and try again.\n"
+        if retry_reason
+        else ""
+    )
+
+    user = (
+        f"Question to explain on the board:\n{question_text}\n\n"
+        f"{known}{steps_hint}{attempt}{given}{retry}\n"
+        f"{_BOARD_BLOCKS}\n"
+        "Return exactly this shape:\n"
+        "{\n"
+        '  "title": "short board title",\n'
+        '  "intro": "one friendly spoken sentence to open with",\n'
+        '  "blocks": [ ... ],\n'
+        '  "final_answer": "the answer"\n'
+        "}\n"
+    )
     return system, user

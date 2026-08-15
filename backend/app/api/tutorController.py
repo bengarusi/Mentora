@@ -1,10 +1,11 @@
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.dependencies import get_tutor_service, get_voice_service
+from app.api.dependencies import get_board_service, get_tutor_service, get_voice_service
+from app.schemas.board import BoardLessonRequest, BoardListResponse, BoardResponse
 from app.schemas.material import HomeworkSessionCreate
 from app.schemas.session import SessionRename, SessionResponse
 from app.schemas.practice import (
@@ -23,6 +24,7 @@ from app.schemas.tutor import (
     TurnResult,
     VoiceTurnResult,
 )
+from app.services.board_service import BoardService
 from app.services.tutor_service import TutorService
 from app.services.voice_service import VoiceService, VoiceServiceError
 
@@ -319,6 +321,102 @@ def get_practice_summary(
 ):
     """Return all practice questions with grading results, grouped by set."""
     return tutor.get_practice_summary(session_id)
+
+
+# ---------------------------------------------------------------------------
+# Visual board explanations
+#
+# A board is only ever created by one of these endpoints, all of which are driven
+# by an explicit student action. No model can reach them, which is what keeps
+# "the tutor never decides to open the board" a structural guarantee rather than
+# a prompt instruction.
+# ---------------------------------------------------------------------------
+
+@router.get("/{session_id}/boards", response_model=BoardListResponse)
+def list_boards(
+    session_id: int,
+    boards: BoardService = Depends(get_board_service),
+):
+    """Every board in this session, plus whether the feature is available.
+
+    Answers 200 even when the flag is off — the frontend has no feature-flag
+    system, so this is how it learns not to render the action.
+    """
+    return boards.list_boards(session_id)
+
+
+@router.post(
+    "/{session_id}/boards/lesson",
+    response_model=BoardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def open_lesson_on_board(
+    session_id: int,
+    response: Response,
+    body: BoardLessonRequest | None = None,
+    boards: BoardService = Depends(get_board_service),
+):
+    """Teach on the board.
+
+    With no focus this is the lesson opening, generated once and replayable
+    thereafter. With a focus it is a mid-lesson request about something specific
+    the student is stuck on, and each one is a new board.
+    """
+    result, created = boards.open_lesson_on_board(session_id, body.focus if body else None)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return result
+
+
+@router.post(
+    "/{session_id}/practice/questions/{question_id}/board",
+    response_model=BoardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def review_question_on_board(
+    session_id: int,
+    question_id: int,
+    response: Response,
+    boards: BoardService = Depends(get_board_service),
+):
+    """Explain a question the student has already been graded on.
+
+    409s while the question is unanswered: during practice the student works it
+    out alone.
+    """
+    result, created = boards.review_question_on_board(session_id, question_id)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return result
+
+
+@router.get("/{session_id}/boards/{board_id}", response_model=BoardResponse)
+def get_board(
+    session_id: int,
+    board_id: int,
+    boards: BoardService = Depends(get_board_service),
+):
+    """Fetch a board's full spec — how replaying works after a page refresh."""
+    return boards.get_board(session_id, board_id)
+
+
+@router.post("/{session_id}/boards/{board_id}/narration")
+def stream_board_narration(
+    session_id: int,
+    board_id: int,
+    boards: BoardService = Depends(get_board_service),
+    voice: VoiceService = Depends(get_voice_service),
+):
+    """Speak the board block by block as NDJSON audio events.
+
+    Same event shape as the chat speech stream, keyed by block index, so the
+    frontend plays it through the queue it already has.
+    """
+    return StreamingResponse(
+        boards.stream_narration(session_id, board_id, voice),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{session_id}/lesson-summary", response_model=LessonSummaryResponse)

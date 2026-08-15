@@ -18,6 +18,10 @@ class FakeLLMProvider(LLMProvider):
     """Deterministic in-memory provider for tests — no network, no cost.
     grade_answer marks an answer correct when it equals the question's correct_answer."""
 
+    def __init__(self):
+        # Recorded so tests can assert on what a prompt did and did not contain.
+        self.board_prompts: list[tuple[str, str]] = []
+
     def generate_teaching_intro(self, ctx: TutorContext) -> str:
         return (
             f"Today we'll learn about {ctx.topic}. "
@@ -95,6 +99,38 @@ class FakeLLMProvider(LLMProvider):
             )
             for i in (1, 2, 3)
         ]
+
+    def generate_board_explanation(self, system: str, user: str) -> dict:
+        """A board that always passes validation.
+
+        Steps are deliberately non-numeric so the chain check abstains: tests
+        that care about validation build their own payloads, and everything else
+        just needs a board that succeeds and can be narrated."""
+        self.board_prompts.append((system, user))
+        return {
+            "title": "On the board",
+            "intro": "Let's look at this together.",
+            "blocks": [
+                {
+                    "kind": "steps",
+                    "id": "s1",
+                    "caption": "Working through the question",
+                    "narration": "First we write down what we already know.",
+                    "items": [
+                        {"math": "a + b", "operation": "start with what we know"},
+                        {"math": "a + b = c", "note": "keep both sides balanced"},
+                    ],
+                },
+                {
+                    "kind": "callout",
+                    "id": "c1",
+                    "caption": "A tip to remember",
+                    "narration": "Remember, whatever you do to one side you do to the other.",
+                    "tone": "insight",
+                    "text": "Do the same thing to both sides.",
+                },
+            ],
+        }
 
     def grade_answer(
         self,

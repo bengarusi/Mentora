@@ -48,6 +48,9 @@ class TutorContext:
     material_excerpts: list[MaterialExcerpt] = field(default_factory=list)
     # Full text of the homework attached to a Homework Help session.
     homework_text: str | None = None
+    # Compact renderings of boards already shown in this session, so the tutor
+    # can answer "why did you cross that out?" after the board is closed.
+    board_digests: list[str] = field(default_factory=list)
 
 
 class LLMProvider(ABC):
@@ -117,6 +120,14 @@ class LLMProvider(ABC):
         self, ctx: TutorContext, set_number: int
     ) -> list[GeneratedPracticeQuestion]:
         """Return exactly 3 practice questions scaled to set_number difficulty."""
+
+    @abstractmethod
+    def generate_board_explanation(self, system: str, user: str) -> dict:
+        """Return the raw parsed JSON for one visual board explanation.
+
+        Deliberately takes a prepared prompt and returns an unvalidated dict:
+        deciding what the board may contain is app/board/validation.py's job, not
+        the transport's."""
 
     @abstractmethod
     def grade_answer(
