@@ -110,6 +110,23 @@ export interface VoiceTurnResult {
   audio_base64: string | null;
 }
 
+export type StreamEvent =
+  | { type: "stream_start" }
+  | { type: "text_delta"; data: string }
+  | { type: "tool_start"; tool_name: string; status?: string }
+  | { type: "tool_end"; tool_name: string; status?: string }
+  | { type: "audio_start"; chunk_id: number }
+  | { type: "audio_delta"; chunk_id: number; data: string }
+  | { type: "audio_end"; chunk_id: number }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
+export interface ToolActivity {
+  id: number;
+  toolName: string;
+  status: "running" | "complete" | "error";
+}
+
 // ---- Practice types ----
 
 export interface PracticeQuestion {

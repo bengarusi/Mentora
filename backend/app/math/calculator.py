@@ -18,6 +18,7 @@ class BasicCalculatorService:
 
     # Characters allowed in a safe arithmetic expression
     _SAFE_PATTERN = re.compile(r"^[\d\s\+\-\*\/\(\)\.]+$")
+    _MAX_EXPRESSION_LENGTH = 256
 
     def evaluate(self, expr: str) -> Fraction | None:
         """
@@ -33,6 +34,8 @@ class BasicCalculatorService:
             "1 - 1/3"     →  Fraction(2, 3)
         """
         cleaned = expr.strip()
+        if len(cleaned) > self._MAX_EXPRESSION_LENGTH or "**" in cleaned:
+            return None
 
         # Convert "a/b" tokens to Fraction literals before evaluation
         # so that "2/5 + 1/10" is interpreted as Fraction(2,5) + Fraction(1,10)
@@ -51,7 +54,7 @@ class BasicCalculatorService:
         """Replace every a/b token with Fraction(a, b) for safe evaluation."""
         # Reject anything that's not digits, spaces, operators, parentheses, dots
         allowed = re.compile(r"^[\d\s\+\-\*\/\(\)\.]+$")
-        if not allowed.match(expr):
+        if not allowed.match(expr) or "**" in expr:
             return None
         # Avoid division by zero at the token level
         # Replace fraction tokens (number/number) with Fraction(a, b) calls

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ---- Structured outputs returned by the LLM provider ----
@@ -28,6 +28,9 @@ class ChatAnswerGrade(BaseModel):
 
 class TurnRequest(BaseModel):
     content: str
+    # Generated once by the client and reused if the same HTTP turn is retried.
+    # Optional only for backwards compatibility with older clients.
+    turn_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class TurnResult(BaseModel):

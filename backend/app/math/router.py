@@ -170,6 +170,11 @@ class MathRouterService:
             tool_used="chat_arithmetic",
             canonical_answer=canonical_fraction_str(computed),
             is_equivalent=(student_frac == computed),
+            steps_data=[
+                f"extracted: {expr}",
+                f"= {canonical_fraction_str(computed)}",
+                f"student: {canonical_fraction_str(student_frac)}",
+            ],
         )
 
     # ------------------------------------------------------------------
@@ -358,7 +363,15 @@ def _extract_equation(text: str) -> str | None:
     Extract an equation like "2*x + 3 = 7" or "x + 5 = 12" from question text.
     """
     pattern = re.compile(
-        r"([0-9a-z\s\+\-\*\/\^\(\)\.]+=[0-9a-z\s\+\-\*\/\^\(\)\.]+)"
+        r"([0-9a-z\s\+\-\*\/\^\(\)\.]+=[0-9a-z\s\+\-\*\/\^\(\)\.]+)",
+        re.IGNORECASE,
     )
-    match = pattern.search(text, re.IGNORECASE)
-    return match.group(0).strip() if match else None
+    match = pattern.search(text)
+    if not match:
+        return None
+    equation = match.group(0).strip()
+    # The permissive character class can include an instruction word before
+    # the algebra. Remove common prose prefixes so SymPy sees one variable,
+    # not the letters in "solve" as additional symbols.
+    equation = re.sub(r"(?i)^(?:solve|find)\s+", "", equation)
+    return equation

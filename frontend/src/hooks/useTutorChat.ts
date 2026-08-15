@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getMessages, getSession } from "../api/sessions";
 import { sendVoiceTurn, streamSpeechTurn, streamTurn } from "../api/tutor";
 import type { AvatarState } from "../components/TeacherAvatar";
-import type { Message, Session } from "../types";
+import type { Message, Session, ToolActivity } from "../types";
 
 // Temporary latency instrumentation. Flip to true to log time-to-first-text /
 // time-to-first-audio in the browser console; keep false in normal use.
@@ -26,6 +26,7 @@ export function useTutorChat(id: number) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
+  const [toolActivity, setToolActivity] = useState<ToolActivity[]>([]);
 
   // ---- voice interaction state (thin layer over the existing chat) ----
   const [recording, setRecording] = useState(false);
@@ -168,6 +169,7 @@ export function useTutorChat(id: number) {
       stopSpeechAndAudio();
 
       setBusy(true);
+      setToolActivity([]);
       setAvatarState("thinking");
       debugTime("message_sent");
 
@@ -189,6 +191,7 @@ export function useTutorChat(id: number) {
 
       // New turn generation; reset per-turn playback state.
       const gen = ++turnGenRef.current;
+      const turnId = crypto.randomUUID();
       streamDoneRef.current = false;
       nextChunkRef.current = 1;
 
@@ -204,6 +207,7 @@ export function useTutorChat(id: number) {
           await streamSpeechTurn(
             id,
             trimmed,
+            turnId,
             {
               onTextDelta: (delta) => {
                 if (gen !== turnGenRef.current) return;
@@ -254,6 +258,24 @@ export function useTutorChat(id: number) {
                 if (gen !== turnGenRef.current) return;
                 setAvatarState("idle"); // text is already visible; just stop spinning
               },
+              onToolStart: (toolName) => {
+                if (gen !== turnGenRef.current) return;
+                setToolActivity((prev) => [
+                  ...prev,
+                  { id: Date.now(), toolName, status: "running" },
+                ]);
+              },
+              onToolEnd: (toolName, status) => {
+                if (gen !== turnGenRef.current) return;
+                setToolActivity((prev) => {
+                  const index = [...prev].map((item) => item.toolName).lastIndexOf(toolName);
+                  return prev.map((item, i) =>
+                    i === index
+                      ? { ...item, status: status === "error" ? "error" : "complete" }
+                      : item
+                  );
+                });
+              },
             },
             controller.signal
           );
@@ -269,10 +291,38 @@ export function useTutorChat(id: number) {
       } else {
         // Voice off: cheap text-only stream, no TTS cost.
         try {
-          await streamTurn(id, trimmed, (delta) => {
-            if (gen !== turnGenRef.current) return;
-            appendTutor(delta);
-          });
+          await streamTurn(
+            id,
+            trimmed,
+            turnId,
+            (delta) => {
+              if (gen !== turnGenRef.current) return;
+              appendTutor(delta);
+            },
+            (event) => {
+              if (gen !== turnGenRef.current) return;
+              if (event.type === "tool_start") {
+                setToolActivity((prev) => [
+                  ...prev,
+                  { id: Date.now(), toolName: event.tool_name, status: "running" },
+                ]);
+              } else {
+                setToolActivity((prev) => {
+                  const index = [...prev]
+                    .map((item) => item.toolName)
+                    .lastIndexOf(event.tool_name);
+                  return prev.map((item, i) =>
+                    i === index
+                      ? {
+                          ...item,
+                          status: event.status === "error" ? "error" : "complete",
+                        }
+                      : item
+                  );
+                });
+              }
+            }
+          );
           if (gen === turnGenRef.current) setAvatarState("idle");
         } catch {
           if (gen === turnGenRef.current) {
@@ -293,7 +343,7 @@ export function useTutorChat(id: number) {
       setBusy(true);
       setAvatarState("thinking");
       try {
-        const result = await sendVoiceTurn(id, audioBlob);
+        const result = await sendVoiceTurn(id, audioBlob, crypto.randomUUID());
         const studentId = -Date.now();
         const tutorId = studentId - 1;
         // Message order: student transcript first, then the tutor reply.
@@ -393,6 +443,7 @@ export function useTutorChat(id: number) {
     busy,
     setBusy,
     avatarState,
+    toolActivity,
     setAvatarState,
     recording,
     voicePlayback,

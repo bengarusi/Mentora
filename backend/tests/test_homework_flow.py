@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.core.config import settings
 from app.api.dependencies import get_storage
 from app.core.enums import LessonPhase, MaterialStatus, MessageRole, SessionMode
 from app.files.storage import LocalFileStorage
@@ -67,6 +68,34 @@ def test_upload_then_analyze_produces_an_opening_tutor_message(api):
     messages = api.get(f"/sessions/{session['id']}/messages", headers=headers).json()
     assert len(messages) == 1
     assert messages[0]["role"] == MessageRole.TUTOR.value
+
+
+def test_disabled_agent_flag_keeps_homework_analysis_on_legacy_storage_path(
+    api, session_factory, monkeypatch
+):
+    """Flag-off analysis must not create or update agent-owned state."""
+    from app.models.agent_session_state import AgentSessionState
+    from app.models.session import LessonSession
+
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", False)
+    headers = auth_headers(api)
+    session = _start_homework(api, headers)
+    _upload_homework(api, headers, session["id"])
+
+    response = api.post(
+        f"/tutor/{session['id']}/homework/analyze", headers=headers
+    )
+
+    assert response.status_code == 200
+    with session_factory() as db:
+        stored = db.get(LessonSession, session["id"])
+        assert stored.homework_outline is None
+        assert (
+            db.query(AgentSessionState)
+            .filter(AgentSessionState.session_id == session["id"])
+            .count()
+            == 0
+        )
 
 
 def test_student_can_chat_in_a_homework_session(api):

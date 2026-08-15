@@ -126,6 +126,21 @@ class HomeworkHelpState(_ConversationalState):
         self, ctx: "LessonContext", text: str
     ) -> str:
         ctx.save_student_message_to_db(text)
+        if _homework_agent_should_run(ctx, text):
+            from app.agent.runner import AgentRunner
+
+            try:
+                with ctx.db.begin_nested():
+                    reply = AgentRunner(
+                        ctx.db, ctx.llm, ctx.student, ctx.session
+                    ).run(text, turn_id=ctx.turn_id)
+                ctx.save_tutor_message_to_db(reply)
+                return reply
+            except Exception:  # noqa: BLE001 - the legacy path is the live fallback
+                log.exception(
+                    "homework agent failed; using legacy reply session_id=%s",
+                    ctx.session.id,
+                )
         # Deliberately NO locked verdict here, unlike the teaching chat.
         #
         # verify_chat_answer grades the student against the tutor's most recent
@@ -150,6 +165,28 @@ class HomeworkHelpState(_ConversationalState):
         raise InvalidLessonAction(
             "Homework Help doesn't have phases — just keep chatting."
         )
+
+
+def _homework_agent_should_run(ctx: "LessonContext", text: str) -> bool:
+    """Flag + capability + deterministic Fast Path gate."""
+    from app.agent.registry import outline_from_json
+    from app.agent.routing import might_need_tools
+    from app.agent.stores import SessionStateStore
+    from app.core.config import settings
+    from app.llm.tool_protocol import ToolCallingLLM
+
+    if not settings.AGENT_ENABLED_HOMEWORK or not isinstance(ctx.llm, ToolCallingLLM):
+        return False
+    state = SessionStateStore(ctx.db).load(ctx.session.id)
+    should_run = might_need_tools(
+        text, state, has_outline=bool(outline_from_json(ctx.session.homework_outline))
+    )
+    log.info(
+        "homework agent route session_id=%s path=%s",
+        ctx.session.id,
+        "agent" if should_run else "fast",
+    )
+    return should_run
 
 
 # ---------------------------------------------------------------------------

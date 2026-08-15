@@ -17,18 +17,22 @@ from app.core.enums import (
     SessionStatus,
     SuccessLevel,
 )
-from app.files.homework import count_exercises
+from app.core.config import settings
+from app.files.homework import count_exercises, segment_exercises
 from app.lesson.context import LessonContext
 from app.lesson.state import (
+    HomeworkHelpState,
     InvalidLessonAction,
     PracticeState,
     TeachingState,
     _ConversationalState,
     _annotate_math,
+    _homework_agent_should_run,
     verify_chat_answer,
 )
 from app.llm.provider import LLMError, LLMProvider
 from app.models.performance import Performance
+from app.models.agent_trace import AgentTrace
 from app.models.session import LessonSession
 from app.models.student import Student
 from app.repositories.session_repo import SessionRepository
@@ -76,8 +80,12 @@ class TutorService:
 
     # ---- helpers ----
 
-    def _build_ctx(self, session: LessonSession) -> LessonContext:
-        return LessonContext(self.db, session, self.student, self.llm)
+    def _build_ctx(
+        self, session: LessonSession, *, turn_id: str | None = None
+    ) -> LessonContext:
+        return LessonContext(
+            self.db, session, self.student, self.llm, turn_id=turn_id
+        )
 
     def _get_session(self, session_id: int) -> LessonSession:
         session = self.sessions.get_specific_session(session_id, self.student.id)
@@ -103,6 +111,14 @@ class TutorService:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Tutor service unavailable: {exc}",
         )
+
+    @staticmethod
+    def _require_agent_turn_id(use_agent: bool, turn_id: str | None) -> None:
+        if use_agent and not turn_id:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "turn_id is required for an agentic homework turn.",
+            )
 
     # ---- session creation ----
 
@@ -225,9 +241,16 @@ class TutorService:
         messages = ctx.messages.get_specific_session_messages_history(session_id)
         message_count = len(messages)
 
+        # A saved but unread/unsupported upload is still visible history. There
+        # is no progress to cache yet, and a GET used to render the Files page
+        # must not create a synthetic Performance row for it.
+        if total == 0 and message_count == 0:
+            return HomeworkProgress(total_exercises=0, solved_exercises=0)
+
         perf = ctx.performances.get_specific_session_performance(session_id)
         if (
-            perf is not None
+            not settings.AGENT_ENABLED_HOMEWORK
+            and perf is not None
             and perf.messages_synced == message_count
             and perf.total_questions == total
         ):
@@ -236,7 +259,17 @@ class TutorService:
             )
 
         solved = 0
-        if total and message_count:
+        if settings.AGENT_ENABLED_HOMEWORK:
+            from app.agent.stores import SessionStateStore
+
+            valid_refs = {
+                item.get("ref")
+                for item in (session.homework_outline or [])
+                if item.get("ref")
+            }
+            state = SessionStateStore(self.db).load(session_id)
+            solved = min(total, len(state.solved_refs & valid_refs))
+        elif total and message_count:
             transcript = [(m.role, m.content) for m in messages]
             try:
                 solved = self.llm.summarize_homework_progress(
@@ -274,6 +307,28 @@ class TutorService:
 
         return HomeworkProgress(total_exercises=total, solved_exercises=solved)
 
+    def get_agent_traces(self, session_id: int, run_id: str | None = None) -> list[dict]:
+        """Read metadata-only agent traces for an owned session."""
+        self._get_session(session_id)
+        query = self.db.query(AgentTrace).filter(AgentTrace.session_id == session_id)
+        if run_id:
+            query = query.filter(AgentTrace.run_id == run_id)
+        rows = query.order_by(AgentTrace.created_at.asc(), AgentTrace.id.asc()).all()
+        return [
+            {
+                "run_id": row.run_id,
+                "step": row.step,
+                "kind": row.kind,
+                "tool_name": row.tool_name,
+                "args": row.args_json,
+                "result": row.result_json,
+                "duration_ms": row.duration_ms,
+                "error": row.error,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+
     def analyze_homework(self, session_id: int) -> TurnResult:
         """Generate the tutor's opening analysis of the uploaded homework.
 
@@ -285,12 +340,55 @@ class TutorService:
                 status.HTTP_409_CONFLICT, "This is not a Homework Help session."
             )
         ctx = self._build_ctx(session)
+        if settings.AGENT_ENABLED_HOMEWORK:
+            homework_text = ctx._homework_text() or ""
+            session.homework_outline = self._build_homework_outline(homework_text)
+            for item in session.homework_outline:
+                item["skill"] = session.subtopic or session.topic
         try:
             reply = ctx.state.generate_phase_opening_message(ctx)
         except LLMError as exc:
             raise self._llm_error(exc)
+        if settings.AGENT_ENABLED_HOMEWORK and session.homework_outline:
+            from app.agent.reducer import StateReducer
+            from app.agent.schemas import ResponseTarget
+            from app.agent.stores import SessionStateStore
+
+            store = SessionStateStore(self.db)
+            state = store.load(session.id)
+            first = session.homework_outline[0]
+            store.save(
+                StateReducer.set_pending(
+                    state, ResponseTarget(first["ref"], first.get("target_type", "exercise"))
+                )
+            )
         self.db.commit()
         return TurnResult(tutor_message=reply or "", phase=session.phase)
+
+    @staticmethod
+    def _build_homework_outline(homework_text: str) -> list[dict]:
+        """Create stable targets and fill only deterministically computable keys."""
+        import re
+
+        from app.math.normalizer import canonical_fraction_str, parse_to_fraction
+        from app.math.router import MathRouterService
+
+        router = MathRouterService()
+        outline = segment_exercises(homework_text)
+        for item in outline:
+            if item.get("expected_answer"):
+                continue
+            computed = router.try_compute_correct_answer(item["text"], "0")
+            if computed.success and computed.canonical_answer:
+                item["expected_answer"] = computed.canonical_answer
+                continue
+            if re.search(r"(?i)\b(?:simplify|reduce)\b", item["text"]):
+                fractions = re.findall(r"-?\d+\s*/\s*\d+", item["text"])
+                if len(fractions) == 1:
+                    value = parse_to_fraction(fractions[0])
+                    if value is not None:
+                        item["expected_answer"] = canonical_fraction_str(value)
+        return outline
 
     # ---- difficulty: initial pick (TEACHING opening) or mid-lesson change ----
 
@@ -330,10 +428,14 @@ class TutorService:
     # ---- chat turn (TEACHING and SUMMARY phases) ----
 
     def send_student_message_and_get_tutor_reply(
-        self, session_id: int, text: str
+        self, session_id: int, text: str, *, turn_id: str | None = None
     ) -> TurnResult:
         session = self._get_session(session_id)
-        ctx = self._build_ctx(session)
+        ctx = self._build_ctx(session, turn_id=turn_id)
+        use_agent = isinstance(ctx.state, HomeworkHelpState) and _homework_agent_should_run(
+            ctx, text
+        )
+        self._require_agent_turn_id(use_agent, turn_id)
         try:
             reply = ctx.state.generate_reply_to_student_message(ctx, text)
         except InvalidLessonAction as exc:
@@ -346,7 +448,12 @@ class TutorService:
     # ---- streaming chat turn (token-by-token) ----
 
     def stream_student_message_and_get_tutor_reply(
-        self, session_id: int, text: str
+        self,
+        session_id: int,
+        text: str,
+        *,
+        turn_id: str | None = None,
+        ndjson_events: bool = False,
     ) -> Iterator[str]:
         """Stream the tutor's reply as text deltas.
 
@@ -362,6 +469,10 @@ class TutorService:
                 "You can only chat during a teaching, summary, or homework-help phase.",
             )
 
+        use_agent = isinstance(ctx.state, HomeworkHelpState) and _homework_agent_should_run(
+            ctx, text
+        )
+        self._require_agent_turn_id(use_agent, turn_id)
         ctx.save_student_message_to_db(text)
         self.db.flush()  # visible to the history query below, not yet committed
         tutor_ctx = ctx.build_tutor_context(text)
@@ -376,22 +487,90 @@ class TutorService:
 
         def generate() -> Iterator[str]:
             chunks: list[str] = []
-            for delta in self.llm.chat_reply_stream(
-                tutor_ctx, annotated, verification=verdict
-            ):
-                chunks.append(delta)
-                yield delta
+            try:
+                if ndjson_events:
+                    yield json.dumps({"type": "stream_start"}) + "\n"
+                if use_agent:
+                    from app.agent.runner import AgentRunner
+
+                    with self.db.begin_nested():
+                        events = AgentRunner(
+                            self.db, self.llm, self.student, session
+                        ).run_stream(text, turn_id=turn_id)
+                        for event in events:
+                            if event.type == "text_delta":
+                                delta = event.data or ""
+                                chunks.append(delta)
+                                if ndjson_events:
+                                    yield json.dumps(
+                                        {"type": "text_delta", "data": delta},
+                                        ensure_ascii=False,
+                                    ) + "\n"
+                                else:
+                                    yield delta
+                            elif ndjson_events:
+                                yield json.dumps(
+                                    {
+                                        "type": event.type,
+                                        "tool_name": event.tool_name,
+                                        "status": event.status,
+                                    },
+                                    ensure_ascii=False,
+                                ) + "\n"
+                else:
+                    for delta in self.llm.chat_reply_stream(
+                        tutor_ctx, annotated, verification=verdict
+                    ):
+                        chunks.append(delta)
+                        if ndjson_events:
+                            yield json.dumps(
+                                {"type": "text_delta", "data": delta},
+                                ensure_ascii=False,
+                            ) + "\n"
+                        else:
+                            yield delta
+            except GeneratorExit:
+                # Closing a StreamingResponse injects GeneratorExit at the
+                # current yield. Explicitly clear the request transaction so a
+                # reused Session cannot later commit an orphaned message.
+                self.db.rollback()
+                raise
+            except Exception:
+                if chunks or not use_agent:
+                    self.db.rollback()
+                    raise
+                log.exception(
+                    "homework stream agent failed; using legacy stream session_id=%s",
+                    session_id,
+                )
+                try:
+                    for delta in self.llm.chat_reply_stream(tutor_ctx, annotated):
+                        chunks.append(delta)
+                        if ndjson_events:
+                            yield json.dumps({"type": "text_delta", "data": delta}) + "\n"
+                        else:
+                            yield delta
+                except BaseException:
+                    self.db.rollback()
+                    raise
             full = "".join(chunks).strip()
             if full:
                 ctx.save_tutor_message_to_db(full)
             self.db.commit()
+            if ndjson_events:
+                yield json.dumps({"type": "done"}) + "\n"
 
         return generate()
 
     # ---- streaming chat turn with low-latency speech (NDJSON: text + audio) ----
 
     def stream_student_message_with_speech(
-        self, session_id: int, text: str, voice: VoiceService
+        self,
+        session_id: int,
+        text: str,
+        voice: VoiceService,
+        *,
+        turn_id: str | None = None,
     ) -> Iterator[str]:
         """Stream the tutor reply as NDJSON events carrying both text deltas and
         per-chunk TTS audio, so the tutor starts speaking after the first short
@@ -415,6 +594,10 @@ class TutorService:
                 "You can only chat during a teaching, summary, or homework-help phase.",
             )
 
+        use_agent = isinstance(ctx.state, HomeworkHelpState) and _homework_agent_should_run(
+            ctx, text
+        )
+        self._require_agent_turn_id(use_agent, turn_id)
         ctx.save_student_message_to_db(text)
         self.db.flush()  # visible to the history query below, not yet committed
         tutor_ctx = ctx.build_tutor_context(text)
@@ -427,6 +610,7 @@ class TutorService:
 
         def generate() -> Iterator[str]:
             turn_start = time.perf_counter()
+            committed = False
             timing: dict[str, float] = {}
             timing_lock = threading.Lock()
 
@@ -481,9 +665,39 @@ class TutorService:
                 # stream is live before the LLM's first token arrives. Unknown to
                 # older clients — the frontend ignores event types it doesn't know.
                 yield ndjson({"type": "stream_start"})
-                for delta in self.llm.chat_reply_stream(
-                    tutor_ctx, annotated, verification=verdict
-                ):
+                def brain_events():
+                    if use_agent:
+                        from app.agent.runner import AgentRunner
+
+                        try:
+                            with self.db.begin_nested():
+                                yield from AgentRunner(
+                                    self.db, self.llm, self.student, session
+                                ).run_stream(text, turn_id=turn_id)
+                            return
+                        except Exception:
+                            log.exception(
+                                "homework speech agent failed; using legacy stream session_id=%s",
+                                session_id,
+                            )
+                    from app.llm.tooling import AgentStreamEvent
+
+                    for legacy_delta in self.llm.chat_reply_stream(
+                        tutor_ctx, annotated, verification=verdict
+                    ):
+                        yield AgentStreamEvent("text_delta", data=legacy_delta)
+
+                for brain_event in brain_events():
+                    if brain_event.type != "text_delta":
+                        yield ndjson(
+                            {
+                                "type": brain_event.type,
+                                "tool_name": brain_event.tool_name,
+                                "status": brain_event.status,
+                            }
+                        )
+                        continue
+                    delta = brain_event.data or ""
                     chunks_full.append(delta)
                     mark("first_text_delta_sent")
                     yield ndjson({"type": "text_delta", "data": delta})
@@ -522,6 +736,7 @@ class TutorService:
                 if full:
                     ctx.save_tutor_message_to_db(full)
                 self.db.commit()
+                committed = True
                 mark("stream_done")
                 log.info(
                     "speech-stream done session_id=%s total_chunks=%d "
@@ -544,6 +759,8 @@ class TutorService:
                 log.error("speech-stream failed session_id=%s error=%s", session_id, exc)
                 yield ndjson({"type": "error", "message": "Something went wrong."})
             finally:
+                if not committed and self.db.in_transaction():
+                    self.db.rollback()
                 executor.shutdown(wait=False, cancel_futures=True)
 
         return generate()

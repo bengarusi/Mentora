@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -46,22 +46,31 @@ def send_student_message_and_get_tutor_reply(
     body: TurnRequest,
     tutor: TutorService = Depends(get_tutor_service),
 ):
-    return tutor.send_student_message_and_get_tutor_reply(session_id, body.content)
+    return tutor.send_student_message_and_get_tutor_reply(
+        session_id, body.content, turn_id=body.turn_id
+    )
 
 
 @router.post("/{session_id}/turn/stream")
 def stream_student_message_and_get_tutor_reply(
     session_id: int,
     body: TurnRequest,
+    request: Request,
     tutor: TutorService = Depends(get_tutor_service),
 ):
-    """Stream the tutor's reply token-by-token as plain text chunks."""
+    """Stream plain text, or opt into the agent event envelope with NDJSON."""
+    wants_events = "application/x-ndjson" in request.headers.get("accept", "")
     generator = tutor.stream_student_message_and_get_tutor_reply(
-        session_id, body.content
+        session_id,
+        body.content,
+        turn_id=body.turn_id,
+        ndjson_events=wants_events,
     )
     return StreamingResponse(
         generator,
-        media_type="text/plain; charset=utf-8",
+        media_type=(
+            "application/x-ndjson" if wants_events else "text/plain; charset=utf-8"
+        ),
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
@@ -76,7 +85,7 @@ def stream_student_message_with_speech(
     """Low-latency turn: stream tutor text deltas AND per-chunk TTS audio as a
     single NDJSON response so speech starts after the first short phrase."""
     generator = tutor.stream_student_message_with_speech(
-        session_id, body.content, voice
+        session_id, body.content, voice, turn_id=body.turn_id
     )
     return StreamingResponse(
         generator,
@@ -118,6 +127,7 @@ def speak_text(
 async def voice_turn(
     session_id: int,
     file: UploadFile = File(...),
+    turn_id: str | None = Form(default=None),
     tutor: TutorService = Depends(get_tutor_service),
     voice: VoiceService = Depends(get_voice_service),
 ):
@@ -152,7 +162,9 @@ async def voice_turn(
         )
 
     # 2. Existing tutor flow (unchanged) — same method the typed chat uses.
-    result = tutor.send_student_message_and_get_tutor_reply(session_id, student_text)
+    result = tutor.send_student_message_and_get_tutor_reply(
+        session_id, student_text, turn_id=turn_id
+    )
 
     # 3. Text-to-speech. A TTS failure must not break the tutor turn: we still
     #    return the text reply, just without audio.
@@ -221,6 +233,16 @@ def get_homework_progress(
 ):
     """How many exercises the student has solved out of the homework's total."""
     return tutor.get_homework_progress(session_id)
+
+
+@router.get("/{session_id}/agent-traces")
+def get_agent_traces(
+    session_id: int,
+    run_id: str | None = None,
+    tutor: TutorService = Depends(get_tutor_service),
+):
+    """Metadata-only tool and state-transition timeline for diagnostics."""
+    return tutor.get_agent_traces(session_id, run_id)
 
 
 # ---------------------------------------------------------------------------

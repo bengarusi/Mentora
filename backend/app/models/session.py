@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import JSON, Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -23,6 +23,7 @@ class LessonSession(Base):
     status = Column(String, nullable=False, default=SessionStatus.ACTIVE.value)  # lifecycle
     phase = Column(String, nullable=False, default=LessonPhase.TEACHING.value)  # pedagogical phase
     difficulty = Column(String, nullable=True)  # student-chosen easy/medium/hard, set after teaching starts
+    homework_outline = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
 

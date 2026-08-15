@@ -62,6 +62,10 @@ class AnswerValidationService:
                 tool_used="fraction_arithmetic",
                 canonical_answer=canonical,
                 is_equivalent=(student_frac == correct_frac),
+                steps_data=[
+                    f"expected: {canonical}",
+                    f"student: {canonical_fraction_str(student_frac)}",
+                ],
             )
 
         # ---- 2. Percentage ↔ fraction cross-check ----------------------------
@@ -75,6 +79,10 @@ class AnswerValidationService:
                     tool_used="percentage_fraction_equivalence",
                     canonical_answer=canonical,
                     is_equivalent=(student_pct_frac == correct_frac),
+                    steps_data=[
+                        f"expected: {canonical}",
+                        f"student percentage: {canonical_fraction_str(student_pct_frac)}",
+                    ],
                 )
 
         # ---- 3. Equation-solving answer check --------------------------------
@@ -91,6 +99,10 @@ class AnswerValidationService:
                     tool_used="equation_answer_comparison",
                     canonical_answer=canonical,
                     is_equivalent=(sf == cf),
+                    steps_data=[
+                        f"expected: {canonical}",
+                        f"student: {canonical_fraction_str(sf)}",
+                    ],
                 )
 
         # ---- 4. SymPy symbolic equivalence -----------------------------------
@@ -101,6 +113,7 @@ class AnswerValidationService:
                 tool_used="sympy_symbolic",
                 canonical_answer=correct_clean,
                 is_equivalent=sympy_eq,
+                steps_data=[f"expected: {correct_clean}", f"student: {student_clean}"],
             )
 
         # ---- 5. Normalised string fallback -----------------------------------
@@ -111,6 +124,7 @@ class AnswerValidationService:
                 tool_used="string_normalisation",
                 canonical_answer=correct_clean,
                 is_equivalent=True,
+                steps_data=[f"normalized match: {correct_clean}"],
             )
 
         # ---- 6. Could not determine ------------------------------------------

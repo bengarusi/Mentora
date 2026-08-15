@@ -8,6 +8,7 @@ import {
   uploadHomework,
 } from "../api/materials";
 import { ChatComposer } from "../components/ChatComposer";
+import { AgentActivity } from "../components/AgentActivity";
 import { ChatWindow } from "../components/ChatWindow";
 import { FileDropzone } from "../components/FileDropzone";
 import { LearningPathSidebar } from "../components/LearningPathSidebar";
@@ -38,6 +39,7 @@ export function HomeworkPage() {
     setBusy,
     setAvatarState,
     avatarState,
+    toolActivity,
     recording,
     voicePlayback,
     voiceError,
@@ -276,6 +278,8 @@ export function HomeworkPage() {
             </div>
 
             {error && <p className="error">{error}</p>}
+
+            <AgentActivity activity={toolActivity} />
 
             <ChatComposer
               draft={draft}

@@ -877,6 +877,25 @@ textarea {
   margin: 0.85rem 0 0.5rem;
 }
 
+.agent-activity {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--color-primary);
+  font-size: 0.88rem;
+  margin: 0.3rem 0;
+  min-height: 1.5rem;
+}
+.agent-activity.running .material-symbols-outlined {
+  animation: agent-spin 1s linear infinite;
+}
+.agent-activity.error {
+  color: var(--color-error, #b3261e);
+}
+@keyframes agent-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* chat input bar */
 .chat-input-bar {
   display: flex;

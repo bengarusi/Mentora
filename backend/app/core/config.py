@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,13 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-5.4-mini"   # main tutor brain
     LLM_PROVIDER: str = "openai"
+
+    # Agentic Homework Tutor. Kept off by default until the flag is enabled in
+    # a target environment; the legacy path remains an atomic fallback.
+    AGENT_ENABLED_HOMEWORK: bool = False
+    AGENT_MAX_STEPS: int = Field(default=4, ge=1, le=4)
+    AGENT_TOOL_TIMEOUT_S: float = Field(default=10.0, gt=0)
+    AGENT_MAX_HINT_LEVEL: int = Field(default=4, ge=1)
 
     # Voice I/O models — kept separate so the tutor brain can evolve
     # independently of speech-to-text / text-to-speech.

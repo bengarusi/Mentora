@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
@@ -11,6 +12,14 @@ from openai import OpenAI
 from app.core.config import settings
 from app.llm import prompts
 from app.llm.provider import LLMError, LLMProvider, TutorContext
+from app.llm.tooling import (
+    AgentEvent,
+    AssistantTurn,
+    Msg,
+    PendingTarget,
+    ToolCall,
+    ToolSchema,
+)
 from app.schemas.tutor import ChatAnswerGrade, GeneratedPracticeQuestion, GradedAnswer
 
 if TYPE_CHECKING:
@@ -20,6 +29,11 @@ log = logging.getLogger("app.llm.openai_provider")
 
 
 class OpenAIProvider(LLMProvider):
+    _RESPONSE_TARGET = re.compile(r"<response_target\b[^>]*?/\s*>", re.IGNORECASE)
+    _CONTROL_ATTRIBUTE = re.compile(
+        r"([a-z_]+)\s*=\s*(['\"])(.*?)\2", re.IGNORECASE
+    )
+
     def __init__(self):
         if not settings.OPENAI_API_KEY:
             raise LLMError("OPENAI_API_KEY is not configured")
@@ -32,6 +46,161 @@ class OpenAIProvider(LLMProvider):
 
     def _is_reasoning_model(self) -> bool:
         return "gpt-5" in (self.model or "")
+
+    def _agent_token_budget(self) -> dict[str, int]:
+        # Tool calls and the requested concise final reply do not need an
+        # unbounded completion. Reasoning models count hidden reasoning in the
+        # same budget, matching the existing provider policy below.
+        return (
+            {"max_completion_tokens": 2100}
+            if self._is_reasoning_model()
+            else {"max_tokens": 600}
+        )
+
+    @staticmethod
+    def _tool_messages(messages: list[Msg]) -> list[dict]:
+        serialized: list[dict] = []
+        for message in messages:
+            item: dict = {"role": message.role, "content": message.content or None}
+            if message.tool_calls:
+                item["tool_calls"] = [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for call in message.tool_calls
+                ]
+            if message.tool_call_id:
+                item["tool_call_id"] = message.tool_call_id
+            serialized.append(item)
+        return serialized
+
+    @classmethod
+    def _parse_agent_content(cls, content: str) -> tuple[str, PendingTarget | None]:
+        matches = list(cls._RESPONSE_TARGET.finditer(content))
+        pending = None
+        for match in matches:
+            attrs = {
+                item.group(1).lower(): item.group(3)
+                for item in cls._CONTROL_ATTRIBUTE.finditer(match.group(0))
+            }
+            target_type = attrs.get("target_type", "").lower()
+            question_ref = attrs.get("question_ref")
+            if question_ref and target_type in {"exercise", "substep"}:
+                pending = PendingTarget(question_ref, target_type)
+        visible = cls._RESPONSE_TARGET.sub("", content).strip()
+        return visible, pending
+
+    def complete_with_tools(
+        self,
+        messages: list[Msg],
+        tools: list[ToolSchema],
+        *,
+        tool_choice: str | dict = "auto",
+    ) -> AssistantTurn:
+        started = time.perf_counter()
+        try:
+            kwargs = {
+                "model": self.model,
+                "messages": self._tool_messages(messages),
+                **self._agent_token_budget(),
+            }
+            if tools:
+                kwargs["tools"] = [tool.as_openai() for tool in tools]
+                kwargs["tool_choice"] = tool_choice
+            response = self.client.chat.completions.create(**kwargs)
+            message = response.choices[0].message
+            calls = tuple(
+                ToolCall(
+                    call.id,
+                    call.function.name,
+                    json.loads(call.function.arguments or "{}"),
+                )
+                for call in (message.tool_calls or [])
+            )
+            visible, pending = self._parse_agent_content(message.content or "")
+            log.info(
+                "llm agent call done model=%s duration_ms=%.1f tool_calls=%d resp_chars=%d",
+                self.model,
+                (time.perf_counter() - started) * 1000,
+                len(calls),
+                len(visible),
+            )
+            return AssistantTurn(visible, calls, pending)
+        except Exception as exc:
+            log.error(
+                "llm agent call failed model=%s duration_ms=%.1f error=%s",
+                self.model,
+                (time.perf_counter() - started) * 1000,
+                type(exc).__name__,
+            )
+            raise LLMError(str(exc)) from exc
+
+    def stream_with_tools(
+        self,
+        messages: list[Msg],
+        tools: list[ToolSchema],
+        *,
+        tool_choice: str | dict = "auto",
+    ):
+        started = time.perf_counter()
+        first_delta_ms: float | None = None
+        try:
+            kwargs = {
+                "model": self.model,
+                "messages": self._tool_messages(messages),
+                "stream": True,
+                **self._agent_token_budget(),
+            }
+            if tools:
+                kwargs["tools"] = [tool.as_openai() for tool in tools]
+                kwargs["tool_choice"] = tool_choice
+            stream = self.client.chat.completions.create(**kwargs)
+            calls: dict[int, dict] = {}
+            content: list[str] = []
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    if first_delta_ms is None:
+                        first_delta_ms = (time.perf_counter() - started) * 1000
+                    content.append(delta.content)
+                    yield AgentEvent.text_delta(delta.content)
+                for call in delta.tool_calls or []:
+                    current = calls.setdefault(call.index, {"id": "", "name": "", "arguments": ""})
+                    if call.id:
+                        current["id"] = call.id
+                    if call.function:
+                        if call.function.name:
+                            current["name"] += call.function.name
+                        if call.function.arguments:
+                            current["arguments"] += call.function.arguments
+            tool_calls = tuple(
+                ToolCall(item["id"], item["name"], json.loads(item["arguments"] or "{}"))
+                for _, item in sorted(calls.items())
+            )
+            visible, pending = self._parse_agent_content("".join(content))
+            log.info(
+                "llm agent stream done model=%s duration_ms=%.1f first_delta_ms=%s "
+                "tool_calls=%d resp_chars=%d",
+                self.model,
+                (time.perf_counter() - started) * 1000,
+                round(first_delta_ms, 1) if first_delta_ms is not None else None,
+                len(tool_calls),
+                len(visible),
+            )
+            yield AgentEvent.assistant_turn(AssistantTurn(visible, tool_calls, pending))
+        except Exception as exc:
+            log.error(
+                "llm agent stream failed model=%s duration_ms=%.1f error=%s",
+                self.model,
+                (time.perf_counter() - started) * 1000,
+                type(exc).__name__,
+            )
+            raise LLMError(str(exc)) from exc
 
     def _call_llm(
         self,

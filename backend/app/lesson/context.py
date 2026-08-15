@@ -34,12 +34,14 @@ class LessonContext:
         student: Student,
         llm: LLMProvider,
         retriever: MaterialRetriever | None = None,
+        turn_id: str | None = None,
     ):
         self.db = db
         self.session = session
         self.student = student
         self.llm = llm
         self.retriever = retriever or get_material_retriever()
+        self.turn_id = turn_id
         self.messages = MessageRepository(db)
         self.questions = AssessmentRepository(db)
         self.performances = PerformanceRepository(db)

@@ -9,6 +9,7 @@ import type {
   PracticeSummary,
   TurnResult,
   VoiceTurnResult,
+  StreamEvent,
 } from "../types";
 
 export async function setLessonDifficulty(
@@ -24,11 +25,12 @@ export async function setLessonDifficulty(
 
 export async function sendTurn(
   sessionId: number,
-  content: string
+  content: string,
+  turnId: string
 ): Promise<TurnResult> {
   const { data } = await apiClient.post<TurnResult>(
     `/tutor/${sessionId}/turn`,
-    { content }
+    { content, turn_id: turnId }
   );
   return data;
 }
@@ -38,28 +40,27 @@ export async function sendTurn(
 export async function streamTurn(
   sessionId: number,
   content: string,
-  onToken: (delta: string) => void
+  turnId: string,
+  onToken: (delta: string) => void,
+  onToolEvent?: (event: Extract<StreamEvent, { type: "tool_start" | "tool_end" }>) => void
 ): Promise<void> {
   const token = getToken();
   const response = await fetch(`/api/tutor/${sessionId}/turn/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Accept: "application/x-ndjson",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, turn_id: turnId }),
   });
   if (!response.ok || !response.body) {
     throw new Error(`Stream failed: ${response.status}`);
   }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    if (chunk) onToken(chunk);
-  }
+  await readEventStream(response, (event) => {
+    if (event.type === "text_delta") onToken(event.data);
+    if (event.type === "tool_start" || event.type === "tool_end") onToolEvent?.(event);
+  });
 }
 
 // Handlers for the low-latency speech-stream turn (NDJSON: text + audio events).
@@ -70,6 +71,8 @@ export interface SpeechStreamHandlers {
   onAudioEnd: (chunkId: number) => void;
   onDone?: () => void;
   onError?: (message: string) => void;
+  onToolStart?: (toolName: string) => void;
+  onToolEnd?: (toolName: string, status: string) => void;
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -79,28 +82,11 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-// Stream tutor text + per-chunk TTS audio over a single NDJSON response. Uses
-// fetch (not axios) so the response body can be read incrementally. Pass an
-// AbortSignal to support barge-in (cancelling the in-flight turn).
-export async function streamSpeechTurn(
-  sessionId: number,
-  content: string,
-  handlers: SpeechStreamHandlers,
-  signal?: AbortSignal
+async function readEventStream(
+  response: Response,
+  onEvent: (event: StreamEvent) => void
 ): Promise<void> {
-  const token = getToken();
-  const response = await fetch(`/api/tutor/${sessionId}/turn/speech-stream`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ content }),
-    signal,
-  });
-  if (!response.ok || !response.body) {
-    throw new Error(`Speech stream failed: ${response.status}`);
-  }
+  if (!response.body) return;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -112,35 +98,62 @@ export async function streamSpeechTurn(
     while ((nl = buffer.indexOf("\n")) !== -1) {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
-      if (!line) continue;
-      const evt = JSON.parse(line) as {
-        type: string;
-        data?: string;
-        chunk_id?: number;
-        message?: string;
-      };
+      if (line) onEvent(JSON.parse(line) as StreamEvent);
+    }
+  }
+}
+
+// Stream tutor text + per-chunk TTS audio over a single NDJSON response. Uses
+// fetch (not axios) so the response body can be read incrementally. Pass an
+// AbortSignal to support barge-in (cancelling the in-flight turn).
+export async function streamSpeechTurn(
+  sessionId: number,
+  content: string,
+  turnId: string,
+  handlers: SpeechStreamHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`/api/tutor/${sessionId}/turn/speech-stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ content, turn_id: turnId }),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Speech stream failed: ${response.status}`);
+  }
+  await readEventStream(response, (evt) => {
       switch (evt.type) {
         case "text_delta":
-          handlers.onTextDelta(evt.data ?? "");
+          handlers.onTextDelta(evt.data);
           break;
         case "audio_start":
-          handlers.onAudioStart?.(evt.chunk_id ?? 0);
+          handlers.onAudioStart?.(evt.chunk_id);
           break;
         case "audio_delta":
-          handlers.onAudioChunk(evt.chunk_id ?? 0, base64ToBytes(evt.data ?? ""));
+          handlers.onAudioChunk(evt.chunk_id, base64ToBytes(evt.data));
           break;
         case "audio_end":
-          handlers.onAudioEnd(evt.chunk_id ?? 0);
+          handlers.onAudioEnd(evt.chunk_id);
+          break;
+        case "tool_start":
+          handlers.onToolStart?.(evt.tool_name);
+          break;
+        case "tool_end":
+          handlers.onToolEnd?.(evt.tool_name, evt.status ?? "complete");
           break;
         case "done":
           handlers.onDone?.();
           break;
         case "error":
-          handlers.onError?.(evt.message ?? "Unknown error");
+          handlers.onError?.(evt.message);
           break;
       }
-    }
-  }
+  });
 }
 
 export async function speakTutorMessage(
@@ -159,10 +172,12 @@ export async function speakTutorMessage(
 // boundary automatically; apiClient's interceptor adds the auth token.
 export async function sendVoiceTurn(
   sessionId: number,
-  audioBlob: Blob
+  audioBlob: Blob,
+  turnId: string
 ): Promise<VoiceTurnResult> {
   const form = new FormData();
   form.append("file", audioBlob, "recording.webm");
+  form.append("turn_id", turnId);
   const { data } = await apiClient.post<VoiceTurnResult>(
     `/tutor/${sessionId}/voice-turn`,
     form,
