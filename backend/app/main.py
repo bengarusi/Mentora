@@ -3,25 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
 from app.core.config import settings
 from app.core.logging import LoggingMiddleware, setup_logging
-from app.db.database import Base, engine
 from app.api import sessionController as session
 from app.api import authController as auth
 from app.api import messageController as message
 from app.api import tutorController as tutor
 from app.api import progressController as progress
 from app.api import materialController as materials
-from app.models import (  # noqa
-    Student,
-    LessonSession,
-    Message,
-    AssessmentQuestion,
-    Performance,
-    StudyMaterial,
-    MaterialChunk,
-)
 
 setup_logging()
 logging.getLogger("app.main").info(
@@ -29,77 +18,11 @@ logging.getLogger("app.main").info(
 )
 
 
-def _ensure_dev_schema() -> None:
-    """Dev-only, idempotent migration for the mandatory `subtopic` column.
-
-    `create_all` never alters existing tables, so an older dev DB created before
-    `LessonSession.subtopic` existed would be missing the column. This adds it,
-    backfills nulls from `topic`, and enforces NOT NULL — all no-ops on a fresh
-    DB. Guarded so a failure can never block startup. (Postgres syntax.)"""
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "ALTER TABLE lesson_sessions "
-                    "ADD COLUMN IF NOT EXISTS subtopic VARCHAR"
-                )
-            )
-            conn.execute(
-                text(
-                    "UPDATE lesson_sessions SET subtopic = topic "
-                    "WHERE subtopic IS NULL"
-                )
-            )
-            conn.execute(
-                text(
-                    "ALTER TABLE lesson_sessions "
-                    "ALTER COLUMN subtopic SET NOT NULL"
-                )
-            )
-            conn.execute(
-                text(
-                    "ALTER TABLE lesson_sessions "
-                    "ADD COLUMN IF NOT EXISTS difficulty VARCHAR"
-                )
-            )
-            # Homework Help sessions are distinguished by `mode`; existing rows
-            # are all normal lessons.
-            conn.execute(
-                text(
-                    "ALTER TABLE lesson_sessions "
-                    "ADD COLUMN IF NOT EXISTS mode VARCHAR"
-                )
-            )
-            conn.execute(
-                text("UPDATE lesson_sessions SET mode = 'lesson' WHERE mode IS NULL")
-            )
-            conn.execute(
-                text(
-                    "ALTER TABLE lesson_sessions "
-                    "ALTER COLUMN mode SET DEFAULT 'lesson'"
-                )
-            )
-            conn.execute(
-                text(
-                    "ALTER TABLE lesson_sessions ALTER COLUMN mode SET NOT NULL"
-                )
-            )
-            conn.execute(
-                text(
-                    "ALTER TABLE performance "
-                    "ADD COLUMN IF NOT EXISTS messages_synced INTEGER"
-                )
-            )
-    except Exception:  # noqa: BLE001 - never block startup on a dev migration
-        logging.getLogger("app.main").warning(
-            "dev schema check for lesson_sessions.subtopic skipped", exc_info=True
-        )
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    _ensure_dev_schema()
+    # Schema ownership belongs exclusively to Alembic. Creating or altering
+    # tables here can race an upgrade and can make an incompatible database
+    # appear current after it is stamped.
     yield
 
 
