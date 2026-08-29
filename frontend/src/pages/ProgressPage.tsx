@@ -75,11 +75,15 @@ function mergeWithCurriculum(map: ProgressMap | null): MergedTopic[] {
   });
 }
 
+/** Lessons shown per page of the history list. */
+const HISTORY_PAGE_SIZE = 5;
+
 export function ProgressPage() {
   const [progress, setProgress] = useState<StudentProgress | null>(null);
   const [map, setMap] = useState<ProgressMap | null>(null);
   const [lessons, setLessons] = useState<Session[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [historyPage, setHistoryPage] = useState(0);
 
   useEffect(() => {
     getProgress().then(setProgress).catch(() => null);
@@ -91,6 +95,15 @@ export function ProgressPage() {
   const recentById = useMemo(
     () => new Map(progress?.recent.map((row) => [row.session_id, row]) ?? []),
     [progress]
+  );
+
+  // The server hands the list back most-recently-opened first, so page 1 is
+  // simply the first slice of it and reopening a lesson moves it here.
+  const pageCount = Math.max(1, Math.ceil(lessons.length / HISTORY_PAGE_SIZE));
+  const page = Math.min(historyPage, pageCount - 1);
+  const pageLessons = lessons.slice(
+    page * HISTORY_PAGE_SIZE,
+    page * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE
   );
 
   function toggle(topicId: string) {
@@ -204,7 +217,7 @@ export function ProgressPage() {
       {lessons.length === 0 && (
         <p className="muted">No lessons yet — pick a topic to get started!</p>
       )}
-      {lessons.map((s) => {
+      {pageLessons.map((s) => {
         const result = recentById.get(s.id);
         return (
           <div
@@ -232,6 +245,42 @@ export function ProgressPage() {
           </div>
         );
       })}
+
+      {pageCount > 1 && (
+        <nav className="history-pager" aria-label="Lesson history pages">
+          <button
+            type="button"
+            className="ghost-button pressable-button"
+            onClick={() => setHistoryPage(page - 1)}
+            disabled={page === 0}
+          >
+            <span className="material-symbols-outlined">chevron_left</span>
+            Newer
+          </button>
+          <div className="history-pager-numbers">
+            {Array.from({ length: pageCount }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`history-page-number${i === page ? " current" : ""}`}
+                onClick={() => setHistoryPage(i)}
+                aria-current={i === page ? "page" : undefined}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="ghost-button pressable-button"
+            onClick={() => setHistoryPage(page + 1)}
+            disabled={page >= pageCount - 1}
+          >
+            Older
+            <span className="material-symbols-outlined">chevron_right</span>
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

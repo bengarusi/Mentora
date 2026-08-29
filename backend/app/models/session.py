@@ -25,6 +25,10 @@ class LessonSession(Base):
     difficulty = Column(String, nullable=True)  # student-chosen easy/medium/hard, set after teaching starts
     homework_outline = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # When the student last opened this lesson. Lesson history is a list of
+    # where they have been, not of what they started, so it is ordered by this
+    # rather than by creation: reopening an old lesson brings it back to the top.
+    last_opened_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
 
     messages = relationship(

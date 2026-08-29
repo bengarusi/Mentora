@@ -12,8 +12,6 @@ from app.schemas.student_progress import (
     TopicProgress,
 )
 
-_RECENT_LIMIT = 10
-
 #: Progress earned by answering one practice question correctly, by the level it
 #: was asked at. Harder questions are worth more because they are worth more —
 #: 20 correct hard answers complete a subtopic where easy ones take 100.
@@ -44,7 +42,7 @@ def get_student_progress(db: Session, student_id: int) -> StudentProgressRespons
     total_questions = 0
     recent: list[RecentSessionDTO] = []
 
-    for index, session in enumerate(sessions):
+    for session in sessions:
         sessions_by_subject[session.subject] = (
             sessions_by_subject.get(session.subject, 0) + 1
         )
@@ -55,19 +53,21 @@ def get_student_progress(db: Session, student_id: int) -> StudentProgressRespons
             )
             total_correct += perf.score or 0
             total_questions += perf.total_questions or 0
-        if index < _RECENT_LIMIT:
-            recent.append(
-                RecentSessionDTO(
-                    session_id=session.id,
-                    subject=session.subject,
-                    topic=session.topic,
-                    goal_text=session.goal_text,
-                    phase=session.phase,
-                    success_level=perf.success_level if perf else None,
-                    score=perf.score if perf else None,
-                    total_questions=perf.total_questions if perf else None,
-                )
+        # Every lesson, not just the newest few: the history list pages back
+        # through all of them, and a lesson on page three needs its score as
+        # much as one on page one.
+        recent.append(
+            RecentSessionDTO(
+                session_id=session.id,
+                subject=session.subject,
+                topic=session.topic,
+                goal_text=session.goal_text,
+                phase=session.phase,
+                success_level=perf.success_level if perf else None,
+                score=perf.score if perf else None,
+                total_questions=perf.total_questions if perf else None,
             )
+        )
 
     completed = sum(
         1 for s in sessions if s.phase == LessonPhase.COMPLETED.value

@@ -40,7 +40,14 @@ def get_session(
     db: Session = Depends(get_db),
     student: Student = Depends(get_current_student),
 ):
-    return get_owned_session_or_404(db, student.id, session_id)
+    """Fetch one lesson, and record that the student just opened it.
+
+    This read has a write in it on purpose: every screen inside a lesson starts
+    by fetching it, so this is the one place that knows a visit happened, and
+    lesson history is ordered by visit.
+    """
+    session = get_owned_session_or_404(db, student.id, session_id)
+    return SessionRepository(db).mark_opened(session)
 
 
 @router.post("/{session_id}/end", response_model=SessionResponse)

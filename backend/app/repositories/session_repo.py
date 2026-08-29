@@ -1,4 +1,6 @@
-from sqlalchemy import or_
+from datetime import datetime, timezone
+
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.enums import MessageRole, SessionMode
@@ -20,7 +22,12 @@ class SessionRepository(BaseRepository[LessonSession]):
         limit: int | None = None,
         offset: int = 0,
     ) -> list[LessonSession]:
-        """Sessions for a student, newest first.
+        """Sessions for a student, most recently opened first.
+
+        Ordered by visit rather than by creation: a lesson the student went back
+        into is the one they are working on now, wherever it started in the list.
+        Rows predating last_opened_at fall back to created_at, which is the order
+        this list used to have.
 
         Defaults to lessons only: Homework Help sessions have no phase ladder
         and no practice score, so counting them as lessons would inflate
@@ -31,7 +38,12 @@ class SessionRepository(BaseRepository[LessonSession]):
         )
         if mode is not None:
             query = query.filter(LessonSession.mode == mode.value)
-        query = query.order_by(LessonSession.created_at.desc(), LessonSession.id.desc())
+        query = query.order_by(
+            func.coalesce(
+                LessonSession.last_opened_at, LessonSession.created_at
+            ).desc(),
+            LessonSession.id.desc(),
+        )
         if offset:
             query = query.offset(offset)
         if limit is not None:
@@ -89,3 +101,9 @@ class SessionRepository(BaseRepository[LessonSession]):
             )
             .first()
         )
+
+    def mark_opened(self, session: LessonSession) -> LessonSession:
+        """Record that the student is looking at this lesson right now."""
+        session.last_opened_at = datetime.now(timezone.utc)
+        self.db.commit()
+        return session
