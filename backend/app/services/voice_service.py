@@ -37,18 +37,48 @@ class VoiceService:
         self.tts_model = settings.OPENAI_TTS_MODEL
         self.tts_voice = settings.OPENAI_TTS_VOICE
 
-    def transcribe_audio(self, audio_bytes: bytes, filename: str) -> str:
+    def transcribe_audio(
+        self, audio_bytes: bytes, filename: str, context: str | None = None
+    ) -> str:
         """Transcribe an uploaded audio file to text. Returns the trimmed
-        transcript (may be empty if no speech was detected)."""
+        transcript (may be empty if no speech was detected).
+
+        *context* is the tutor's most recent message; passing it biases the
+        decoder toward the words a valid answer would use (digits, number
+        words) and away from off-topic hallucinations on noisy audio."""
         # OpenAI infers the format from the filename extension, so the upload
         # filename is passed through with the in-memory bytes.
+        # Reject clips too short to contain speech: the model hallucinates
+        # random text (foreign place names, etc.) on near-silent audio.
+        if (
+            settings.STT_MIN_AUDIO_BYTES
+            and len(audio_bytes) < settings.STT_MIN_AUDIO_BYTES
+        ):
+            log.info("stt skipped: audio too short bytes=%d", len(audio_bytes))
+            return ""
         buffer = io.BytesIO(audio_bytes)
         buffer.name = filename or "audio.webm"
         start = time.perf_counter()
+        # Pin the language when configured; an empty setting lets the model
+        # auto-detect (which can misread short clips as another language).
+        extra = {}
+        if settings.OPENAI_STT_LANGUAGE:
+            extra["language"] = settings.OPENAI_STT_LANGUAGE
+        # Bias decoding toward the expected domain (short spoken math answers),
+        # which further suppresses off-topic hallucinations.
+        prompt = (
+            "A young student speaks a short answer to a math question, "
+            "usually a number such as ten, twelve, or twenty-four."
+        )
+        if context:
+            prompt = f"{prompt} The tutor just asked: {context.strip()}"
+        extra["prompt"] = prompt
         try:
             result = self.client.audio.transcriptions.create(
                 model=self.stt_model,
                 file=buffer,
+                temperature=0,
+                **extra,
             )
         except Exception as exc:  # noqa: BLE001 - normalize SDK/network errors
             log.error(

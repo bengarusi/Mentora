@@ -168,6 +168,21 @@ export async function speakTutorMessage(
   return data.audio_base64;
 }
 
+// Map a MediaRecorder MIME type ("audio/mp4;codecs=..." etc.) to a bare file
+// extension OpenAI's transcription endpoint accepts. Falls back to webm.
+function extensionForMime(mime: string): string {
+  const base = (mime || "").split(";")[0].trim().toLowerCase();
+  const map: Record<string, string> = {
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mp4": "mp4",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+  };
+  return map[base] ?? "webm";
+}
+
 // Send recorded audio to the voice endpoint. The browser sets the multipart
 // boundary automatically; apiClient's interceptor adds the auth token.
 export async function sendVoiceTurn(
@@ -176,7 +191,9 @@ export async function sendVoiceTurn(
   turnId: string
 ): Promise<VoiceTurnResult> {
   const form = new FormData();
-  form.append("file", audioBlob, "recording.webm");
+  // OpenAI infers the audio codec from the filename extension, so the name
+  // must match what the browser actually recorded (Safari records mp4, not webm).
+  form.append("file", audioBlob, `recording.${extensionForMime(audioBlob.type)}`);
   form.append("turn_id", turnId);
   const { data } = await apiClient.post<VoiceTurnResult>(
     `/tutor/${sessionId}/voice-turn`,

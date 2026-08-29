@@ -23,12 +23,24 @@ class Settings(BaseSettings):
     # independently of speech-to-text / text-to-speech.
     # Override any of these in backend/.env without touching service code.
     OPENAI_STT_MODEL: str = "gpt-4o-transcribe"
+    # ISO-639-1 language spoken by the student. Pins transcription to one
+    # language so short or noisy clips are not misdetected as another tongue.
+    # Set empty to let the model auto-detect.
+    OPENAI_STT_LANGUAGE: str = "en"
+    # Recordings smaller than this are treated as silence and not transcribed.
+    # Disabled by default (0): a short spoken answer like "eight" is a valid
+    # turn. Raise it only if empty-audio hallucinations become a problem.
+    STT_MIN_AUDIO_BYTES: int = 0
     OPENAI_TTS_MODEL: str = "gpt-4o-mini-tts"
     OPENAI_TTS_VOICE: str = "alloy"
 
     # Vision model used to read text off uploaded images (photographed
     # homework, scanned worksheets). Must be a vision-capable model.
     OPENAI_VISION_MODEL: str = "gpt-4o-mini"
+
+    # Local-demo only: write every prompt sent to the model to logs/prompts/.
+    # Off by default; the files contain full student and material text.
+    LLM_DEBUG_DUMP_PROMPTS: bool = False
 
     # ---- visual board explanations ----
     # Off by default until enabled in a target environment. Practice is fully

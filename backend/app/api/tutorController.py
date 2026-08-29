@@ -24,6 +24,7 @@ from app.schemas.tutor import (
     TurnResult,
     VoiceTurnResult,
 )
+from app.repositories.message_repo import MessageRepository
 from app.services.board_service import BoardService
 from app.services.tutor_service import TutorService
 from app.services.voice_service import VoiceService, VoiceServiceError
@@ -150,9 +151,22 @@ async def voice_turn(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "Uploaded audio file is empty."
         )
 
-    # 1. Speech-to-text
+    # 1. Speech-to-text, biased by the tutor's last message so short spoken
+    #    answers ("eight") are heard correctly instead of hallucinated.
+    last_tutor = next(
+        (
+            m.content
+            for m in reversed(
+                MessageRepository(tutor.db).get_recent_session_messages(session_id, 6)
+            )
+            if m.role == "tutor"
+        ),
+        None,
+    )
     try:
-        student_text = voice.transcribe_audio(audio_bytes, file.filename or "audio.webm")
+        student_text = voice.transcribe_audio(
+            audio_bytes, file.filename or "audio.webm", context=last_tutor
+        )
     except VoiceServiceError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"Could not transcribe audio: {exc}"

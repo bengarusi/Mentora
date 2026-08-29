@@ -398,14 +398,23 @@ export function useTutorChat(id: number) {
     stopSpeechAndAudio();
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
     } catch {
       setVoiceError("Microphone access was denied. Please allow it to use voice.");
       return;
     }
     mediaStreamRef.current = stream;
     audioChunksRef.current = [];
-    const recorder = new MediaRecorder(stream);
+    // A steady bitrate keeps quiet speech from being over-compressed into
+    // artefacts that the transcription model then mis-hears.
+    const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) audioChunksRef.current.push(e.data);
     };

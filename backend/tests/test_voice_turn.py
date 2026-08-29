@@ -27,7 +27,9 @@ class FakeVoiceService:
         self._stt_error = stt_error
         self._tts_error = tts_error
 
-    def transcribe_audio(self, audio_bytes: bytes, filename: str) -> str:
+    def transcribe_audio(
+        self, audio_bytes: bytes, filename: str, context: str | None = None
+    ) -> str:
         if self._stt_error:
             raise VoiceServiceError("stt boom")
         return self._transcript

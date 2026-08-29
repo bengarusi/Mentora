@@ -171,6 +171,28 @@ class LessonContext:
             excerpts.append(
                 MaterialExcerpt(title=chunk.material_title, content=content)
             )
+        if excerpts:
+            log.info(
+                "material context injected session_id=%s query=%r chunks=%s",
+                self.session.id,
+                query,
+                [
+                    {
+                        "material_id": c.material_id,
+                        "title": c.material_title,
+                        "chunk_index": c.chunk_index,
+                        "score": round(c.score, 3),
+                    }
+                    for c in chunks[: len(excerpts)]
+                ],
+            )
+        else:
+            log.info(
+                "material context none session_id=%s query=%r "
+                "(no chunk passed the relevance thresholds)",
+                self.session.id,
+                query,
+            )
         return excerpts
 
     def _homework_text(self) -> str | None:

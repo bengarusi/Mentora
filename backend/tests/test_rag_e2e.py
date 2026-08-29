@@ -106,7 +106,9 @@ def llm():
 class FakeVoice:
     """No OpenAI calls; the transports under test only need audio to exist."""
 
-    def transcribe_audio(self, audio_bytes: bytes, filename: str) -> str:
+    def transcribe_audio(
+        self, audio_bytes: bytes, filename: str, context: str | None = None
+    ) -> str:
         return "how do I add fractions with the same denominator?"
 
     def synthesize_speech(self, text: str) -> str:
