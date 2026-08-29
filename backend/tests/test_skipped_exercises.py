@@ -183,3 +183,31 @@ def test_everything_solved_still_reads_as_finished():
     )
 
     assert "EVERY exercise in this homework is now solved" in _system(state)
+
+
+def test_the_exercise_to_ask_is_named_with_its_text():
+    """The transcript argues for the exercise just left; the prompt must not."""
+    state = SessionState(
+        session_id=1,
+        current_exercise_index=3,
+        solved_refs=frozenset({"exercise-1"}),
+        skipped_refs=frozenset({"exercise-2"}),
+    )
+
+    system = TeacherAgent().messages(
+        state=state,
+        outline=_outline(),
+        history=[("tutor", "Question 2"), ("student", "next please")],
+        student_text="next please",
+        just_skipped="exercise-2",
+    )[0].content
+
+    assert 'The exercise to work on right now is exercise-3: "Question 3"' in system
+    assert "exercise-2 is now PARKED" in system
+    assert "do not tell them to finish it first" in system
+
+
+def test_without_a_skip_nothing_is_said_about_parking():
+    state = SessionState(session_id=1, current_exercise_index=1)
+
+    assert "PARKED" not in _system(state)

@@ -23,6 +23,7 @@ class TeacherAgent:
         outline: list[HomeworkExercise],
         history: list[tuple[str, str]],
         student_text: str,
+        just_skipped: str | None = None,
     ) -> list[Msg]:
         outline_json = json.dumps(
             [
@@ -44,11 +45,27 @@ class TeacherAgent:
             for item in outline
             if item.ref not in state.solved_refs and item.ref not in state.skipped_refs
         ]
-        current_ref = (
-            outline[state.current_exercise_index - 1].ref
+        current = (
+            outline[state.current_exercise_index - 1]
             if 0 <= state.current_exercise_index - 1 < len(outline)
             else None
         )
+        current_ref = current.ref if current else None
+        # The transcript argues against the state: the last thing in it is the
+        # tutor posing the exercise the student then asked to leave, which reads
+        # as "the next one" all over again. So the exercise to ask is named
+        # outright, with its text, last — nearest the student's turn.
+        directive = ""
+        if just_skipped:
+            directive += (
+                f"\nThe student has just asked to move on. {just_skipped} is now PARKED: do not "
+                "ask it again in this reply, and do not tell them to finish it first.\n"
+            )
+        if current is not None:
+            directive += (
+                f'\nThe exercise to work on right now is {current.ref}: "{current.text}". '
+                "Ask about this one and no other.\n"
+            )
         if not outline or untouched:
             stage = ""
         elif not skipped:
@@ -90,7 +107,8 @@ them they must finish the one they just left.
 {stage}Current exercise index: {state.current_exercise_index} ({current_ref}); hint level: {state.hint_level}.
 Solved: {json.dumps(solved)}. Skipped, still owed: {json.dumps(skipped)}.
 Not yet reached: {json.dumps(untouched)}.
-Awaiting: {state.response_target}. Outline: {outline_json}"""
+Awaiting: {state.response_target}. Outline: {outline_json}
+{directive}"""
         messages = [Msg("system", system)]
         messages.extend(Msg("assistant" if role == "tutor" else "user", content) for role, content in history)
         messages.append(Msg("user", student_text))

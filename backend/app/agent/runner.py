@@ -96,6 +96,7 @@ class AgentRunner:
         # it here rather than through a tool keeps the student's "next one
         # please" from depending on the model recognising the phrasing.
         outline_refs = [item.ref for item in outline]
+        just_skipped: str | None = None
         if wants_to_skip(student_text):
             current_ref = (
                 outline_refs[state.current_exercise_index - 1]
@@ -104,6 +105,7 @@ class AgentRunner:
             )
             if current_ref and current_ref not in state.solved_refs:
                 before = state
+                just_skipped = current_ref
                 state = StateReducer.skip(state, current_ref, outline_refs)
                 self.session_store.save(state)
                 self.trace_store.add(
@@ -123,6 +125,7 @@ class AgentRunner:
             outline=outline,
             history=history,
             student_text=student_text,
+            just_skipped=just_skipped,
         )
         seen: dict[tuple[str, str], ToolOutput] = {}
         forced = should_evaluate_answer(student_text, state)
