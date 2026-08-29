@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from fractions import Fraction
 from typing import Protocol
 
 from app.agent.schemas import EvaluationResult, HomeworkExercise
@@ -37,6 +38,76 @@ def _numeric_candidates(text: str) -> tuple[str, ...]:
             if canonical not in candidates:
                 candidates.append(canonical)
     return tuple(candidates)
+
+
+_SPOKEN_UNITS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+    "seventeen": 17, "eighteen": 18, "nineteen": 19,
+}
+_SPOKEN_TENS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+_SPOKEN_DENOMINATORS = {
+    "half": 2, "halves": 2, "third": 3, "thirds": 3, "quarter": 4,
+    "quarters": 4, "fourth": 4, "fourths": 4, "fifth": 5, "fifths": 5,
+    "sixth": 6, "sixths": 6, "seventh": 7, "sevenths": 7, "eighth": 8,
+    "eighths": 8, "ninth": 9, "ninths": 9, "tenth": 10, "tenths": 10,
+}
+#: Words a student wraps an answer in. Dropped before the number is read.
+_SPOKEN_FILLER = frozenset(
+    {"the", "answer", "is", "it", "its", "i", "think", "equals", "equal", "to",
+     "that", "would", "be", "so", "um", "uh", "well", "maybe"}
+)
+_SPOKEN_WORD = re.compile(r"[a-z']+")
+
+
+def _spoken_number_candidate(text: str) -> str | None:
+    """A number said in words — "three quarters", "seven" — as a canonical value.
+
+    Speech is how this arrives: transcription writes fractions as words, so
+    without this a student who says the right answer aloud is never credited
+    with it. Kept deliberately strict — after the filler words are dropped, what
+    is left must be nothing but the number — so "one more time" is not read as
+    the answer 1.
+    """
+    tokens = [
+        token
+        for token in _SPOKEN_WORD.findall(text.lower().replace("-", " "))
+        if token not in _SPOKEN_FILLER
+    ]
+    if not tokens:
+        return None
+
+    sign = 1
+    whole = 0
+    denominator: int | None = None
+    saw_number = False
+    for token in tokens:
+        if token in ("negative", "minus"):
+            sign = -1
+        elif token in ("a", "an", "and"):
+            continue
+        elif token == "hundred":
+            whole = (whole or 1) * 100
+            saw_number = True
+        elif token in _SPOKEN_UNITS:
+            whole += _SPOKEN_UNITS[token]
+            saw_number = True
+        elif token in _SPOKEN_TENS:
+            whole += _SPOKEN_TENS[token]
+            saw_number = True
+        elif token in _SPOKEN_DENOMINATORS and denominator is None:
+            denominator = _SPOKEN_DENOMINATORS[token]
+        else:
+            return None  # a word we do not understand: this is not a number
+
+    if denominator is None and not saw_number:
+        return None
+    numerator = whole if saw_number else 1  # "a half"
+    return canonical_fraction_str(Fraction(sign * numerator, denominator or 1))
 
 
 def _terminal_result_candidate(text: str) -> str | None:
@@ -77,7 +148,10 @@ class AnswerEvaluator:
             if len(raw_candidates) == 1
             else _terminal_result_candidate(student_answer)
         )
-        candidate = raw_candidate or student_answer
+        # Digits win where there are any; words are read only where the
+        # deterministic evaluators would otherwise abstain and hand an answer
+        # that is plainly right to a fallback that cannot record it.
+        candidate = raw_candidate or _spoken_number_candidate(student_answer) or student_answer
 
         deterministic = None
         if target.expected_answer:

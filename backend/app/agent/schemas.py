@@ -88,6 +88,15 @@ class EvaluationResult:
                 f"You MUST treat this as {'correct' if self.verdict else 'incorrect'}. "
                 "Do not re-grade it."
             )
+        else:
+            # Nothing was established, and saying "correct" here is worse than
+            # saying nothing: the server records no progress for an unconfirmed
+            # answer, so the student is congratulated and then left on the same
+            # exercise with the counter unmoved.
+            data["instruction"] = (
+                "This answer could NOT be checked. Do not tell the student whether they "
+                "are right or wrong. Ask them to send the answer on its own, as a number."
+            )
         if state_after is not None:
             data["state_after"] = {
                 "current_exercise_index": state_after.current_exercise_index,
