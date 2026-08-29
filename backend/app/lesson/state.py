@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
-from app.core.enums import LessonPhase, SuccessLevel
+from app.core.enums import DifficultyLevel, LessonPhase, SuccessLevel
 from app.llm.provider import LLMError
 from app.math.router import MathRouterService
 from app.math.schemas import ToolResult
@@ -246,6 +246,10 @@ class PracticeState(LessonState):
         generated = ctx.llm.generate_practice_questions(
             ctx.build_tutor_context(), set_number
         )
+        # The level the lesson stands at right now — whatever the student last
+        # chose in the chat — is what these questions were written for, and is
+        # what each correct answer will be credited at.
+        level = ctx.session.difficulty or DifficultyLevel.MEDIUM.value
         rows: list[AssessmentQuestion] = []
         for g in generated:
             validated_answer = _validate_generated_answer(
@@ -257,6 +261,7 @@ class PracticeState(LessonState):
                         session_id=ctx.session.id,
                         set_number=set_number,
                         difficulty=g.difficulty,
+                        level=level,
                         question_text=g.question,
                         correct_answer=validated_answer,
                         solution_steps=g.solution_steps,
@@ -266,10 +271,11 @@ class PracticeState(LessonState):
                 )
             )
         log.info(
-            "generated practice set session_id=%s set_number=%d count=%d",
+            "generated practice set session_id=%s set_number=%d count=%d level=%s",
             ctx.session.id,
             set_number,
             len(rows),
+            level,
         )
         return rows
 
@@ -284,8 +290,13 @@ class PracticeState(LessonState):
         Correctness comes from the deterministic math tool whenever it can decide,
         so correct answers need NO LLM call (instant). The LLM is only used to
         explain *wrong* answers (and as a full fallback when the tool abstains),
-        and those calls run concurrently so a whole set costs ~one round-trip."""
+        and those calls run concurrently so a whole set costs ~one round-trip.
+
+        A question already answered correctly is closed: answering it again is
+        re-submitting work that is done, so it is neither re-graded nor re-scored.
+        A wrong answer stays open — retrying it is the point of practice."""
         questions = ctx.questions.get_practice_set_questions(ctx.session.id, set_number)
+        settled = {q.id for q in questions if q.is_correct}
 
         # Phase 1: deterministic pass. Decide is_correct and which questions still
         # need an LLM call for prose feedback.
@@ -294,7 +305,7 @@ class PracticeState(LessonState):
 
         for q in questions:
             raw_answer = answers.get(q.id)
-            if raw_answer is None:
+            if raw_answer is None or q.id in settled:
                 continue
             criteria = q.correct_answer or q.criteria or ""
             tool_result = _math_router.validate_student_answer(
@@ -347,6 +358,13 @@ class PracticeState(LessonState):
         results: list[tuple[AssessmentQuestion, GradedAnswer]] = []
         for q in questions:
             if q.id not in answers:
+                continue
+            if q.id in settled:
+                # Replayed as it was first earned, so the results page is whole
+                # without the answer being counted a second time.
+                results.append(
+                    (q, GradedAnswer(is_correct=True, feedback=q.feedback or _correct_feedback()))
+                )
                 continue
             graded = decided.get(q.id) or llm_grades[q.id]
             q.student_answer = answers[q.id]

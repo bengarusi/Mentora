@@ -1,6 +1,8 @@
+from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session
 
 from app.models.assessment import AssessmentQuestion
+from app.models.session import LessonSession
 from app.repositories.base import BaseRepository
 
 
@@ -51,6 +53,38 @@ class AssessmentRepository(BaseRepository[AssessmentQuestion]):
             )
             .count()
         )
+
+    def count_correct_by_topic_and_level(
+        self, student_id: int
+    ) -> list[tuple[str, str, str | None, int]]:
+        """(topic, subtopic, level, count) over this student's correct answers.
+
+        Counted per question rather than per submission, so a question can only
+        ever be credited once however many times it is answered. Grouping in the
+        database keeps this one query regardless of how much practice there is.
+        """
+        return [
+            (topic, subtopic, level, count)
+            for topic, subtopic, level, count in (
+                self.db.query(
+                    LessonSession.topic,
+                    LessonSession.subtopic,
+                    AssessmentQuestion.level,
+                    sqlfunc.count(AssessmentQuestion.id),
+                )
+                .join(LessonSession, LessonSession.id == AssessmentQuestion.session_id)
+                .filter(
+                    LessonSession.student_id == student_id,
+                    AssessmentQuestion.is_correct.is_(True),
+                )
+                .group_by(
+                    LessonSession.topic,
+                    LessonSession.subtopic,
+                    AssessmentQuestion.level,
+                )
+                .all()
+            )
+        ]
 
     def count_checked_answers(self, session_id: int) -> int:
         """Total graded answers across all sets (kept for compat)."""

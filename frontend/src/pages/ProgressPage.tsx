@@ -29,6 +29,23 @@ interface MergedTopic {
   subtopics: MergedSub[];
 }
 
+/** A topic is only as done as its whole curriculum, so subtopics nobody has
+ * opened count as zero rather than being left out of the average. This is
+ * computed here and not on the server because the curriculum lives here. */
+function topicMastery(subtopics: MergedSub[]): number | null {
+  if (subtopics.length === 0) return null;
+  const total = subtopics.reduce((sum, s) => sum + (s.mastery ?? 0), 0);
+  return Math.round(total / subtopics.length);
+}
+
+/** Progress never falls, so there is no "needs practice" band: untouched,
+ * under way, or complete. */
+function statusFromMastery(mastery: number | null, started: boolean): string {
+  if (!started || mastery === null) return "not_started";
+  if (mastery >= 100) return "mastered";
+  return "in_progress";
+}
+
 function mergeWithCurriculum(map: ProgressMap | null): MergedTopic[] {
   const backendTopics = new Map(map?.topics.map((t) => [t.topic, t]) ?? []);
   return MATH_CURRICULUM.map((ct) => {
@@ -46,12 +63,13 @@ function mergeWithCurriculum(map: ProgressMap | null): MergedTopic[] {
         lastSessionId: bs?.last_session_id ?? null,
       };
     });
+    const mastery = bt ? topicMastery(subtopics) : null;
     return {
       id: ct.id,
       title: ct.title,
       icon: ct.icon,
-      status: bt?.status ?? "not_started",
-      mastery: bt?.mastery_percentage ?? null,
+      status: statusFromMastery(mastery, bt !== undefined),
+      mastery,
       subtopics,
     };
   });

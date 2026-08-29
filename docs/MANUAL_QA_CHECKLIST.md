@@ -8,16 +8,16 @@
 | --- | ---: | ---: | ---: | ---: | ---: |
 | התחברות וניווט | 3 | | | | 3 |
 | שיעורים ותרגול | 5 | | | | 5 |
-| היסטוריה והתקדמות | 3 | | | | 3 |
+| היסטוריה והתקדמות | 4 | | | | 4 |
 | קבצים וחיפוש בחומרים | 4 | | | | 4 |
 | שיעורי בית וסוכן | 8 | | | | 8 |
 | סטרימינג, קול, אבטחה ותפעול | 7 | | | | 7 |
-| **סה״כ** | **30** | | | | **30** |
+| **סה״כ** | **31** | | | | **31** |
 
 ## התקדמות QA
 
-- סה״כ בדיקות: 30
-- P0 קריטי: 14; P1 גבוה: 13; P2 רגיל: 3; P3: 0
+- סה״כ בדיקות: 31
+- P0 קריטי: 15; P1 גבוה: 13; P2 רגיל: 3; P3: 0
 - עברו / נכשלו / חסומות / לא הורצו:
 
 # מפת יכולות שהתגלו
@@ -34,6 +34,7 @@
 | SUM-01 | סיכום | סיכום שיעור/תרגול ותרגול מחדש | Summary | performance | ידנית |
 | HIST-01 | היסטוריה | כל היסטוריית השיעורים, כולל נתונים ישנים | Progress | sessions/messages | ידנית |
 | PROG-01 | התקדמות | מדדים ומפת לימוד; ללא שיעורי בית | Progress | performance | ידנית |
+| PROG-02 | התקדמות | ניקוד לפי רמה (1/3/5) על תשובות תרגול נכונות, עד 100% | Practice → Progress | assessment_questions.level | ידנית |
 | MAT-01 | חומרים | העלאה, תיוג, סינון ומחיקה של חומר לימוד | Files | materials/chunks/bytes | ידנית |
 | MAT-02 | חומרים | חילוץ TXT/PDF/DOCX/PPTX/תמונה, כשל וניסיון חוזר | Files | status/text/chunks | ידנית |
 | MAT-03 | חיפוש | שימוש בחומר רלוונטי בשיעור רגיל | Files → Lesson | chunks | ידנית |
@@ -110,6 +111,13 @@
 - [ ] **T-PROG-01 — מפת התקדמות מבודדת** · **P1** · PROG-01, HW-03
   - בדקו את Progress ואת קישורי השיעורים; צרו/פתרו שיעורי בית ורעננו את Progress.
   - מצופה: נתוני שיעורי הבית אינם משפיעים על מפת הלימוד או סטטיסטיקת השיעורים.
+
+- [ ] **T-PROG-02 — ניקוד התקדמות לפי רמת קושי** · **P0** · PROG-02, LES-02, PRAC-01
+  - פתחו שיעור, בחרו **easy**, פתחו Progress ורשמו את אחוז תת־הנושא. חזרו, תרגלו וענו נכון על שאלה אחת בלבד, ובדקו שוב את Progress.
+  - חזרו לצ׳אט של שיעור חדש, לחצו **Increase difficulty** עד **hard**, תרגלו וענו נכון על שאלה אחת.
+  - הגישו שוב את אותו סט (רענון עמוד התרגול) עם תשובות שגויות לשאלות שכבר נענו נכון.
+  - עברו שיעור שלם בלי לתרגל כלל, ובדקו את Progress.
+  - מצופה: `+1%` ל־easy ו־`+5%` ל־hard לכל תשובה נכונה; שאלה שנענתה נכון נשארת נכונה ואינה מזכה שוב; הוראה וצ׳אט בלבד אינם מזיזים את האחוז; האחוז נעצר ב־100% ואינו יורד לעולם; פס הנושא הוא ממוצע כל תתי־הנושאים בתכנית.
 
 - [ ] **T-DATA-01 — refresh, restart ו־login מחדש** · **P1** · DATA-01
   - על שיעור, חומר ושיעורי בית בצעו refresh, restart ל־frontend ול־backend, logout/login ופתחו היסטוריה.
@@ -230,6 +238,7 @@ SELECT run_id, session_id, step, kind, tool_name, duration_ms, error FROM agent_
 | --- | --- | --- |
 | auth, identity normalization, ownership | T-AUTH-01–02, T-SEC-01 | כיסוי ידני מלא ברמת מוצר |
 | lesson state, practice, summaries | T-LES-01–02, T-PRAC-01–02, T-SUM-01 | כיסוי ידני מלא |
+| ניקוד התקדמות לפי רמה | T-PROG-02 | אוטומטי ב־test_practice_progress.py |
 | history ונתונים ישנים | T-HIST-01, T-DATA-01 | כולל regression visibility |
 | materials, extraction, RAG | T-MAT-01–04, T-PERF-01 | כולל כשל/גבולות |
 | homework flow/progress | T-HW-01–03 | כולל file-only session |
@@ -244,7 +253,7 @@ SELECT run_id, session_id, step, kind, tool_name, duration_ms, error FROM agent_
 | --- | --- | --- |
 | `/login`, `/register` | T-AUTH-01–02, T-NAV-01 | כן |
 | `/`, `/new`, `/topic/:topicId` | T-NAV-01, T-LES-01 | כן |
-| `/progress` | T-HIST-01, T-PROG-01 | כן |
+| `/progress` | T-HIST-01, T-PROG-01–02 | כן |
 | `/files` | T-MAT-01–04, T-HW-01 | כן |
 | `/homework/:sessionId` | T-HW-01–03, T-FLAG-01–02, T-AGENT-01–03 | כן |
 | `/lesson/:sessionId` וכל תתי־מסלולי practice/summary | T-LES-01–02, T-PRAC-01–02, T-SUM-01, T-STREAM-01, T-VOICE-01–02 | כן |

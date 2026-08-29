@@ -25,11 +25,14 @@ class StudentProgressResponse(BaseModel):
 
 
 # ---- topic/subtopic progress map ----
-# status is one of: mastered | in_progress | needs_practice | not_started
+# status is one of: mastered | in_progress | not_started. Progress only ever
+# climbs, so there is no failing band; "not_started" is the frontend's to assign,
+# since a subtopic with no session at all never reaches this response.
 
 
 class SubtopicProgress(BaseModel):
     subtopic: str  # the stored subtopic title (frontend matches it to the curriculum)
+    #: Percent earned from correct practice answers (1/3/5 by level), capped at 100.
     mastery_percentage: int | None = None
     status: str
     sessions_count: int = 0
