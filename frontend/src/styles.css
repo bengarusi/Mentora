@@ -2401,7 +2401,18 @@ textarea {
   background: none;
   color: var(--color-primary);
 }
+.homework-session-delete {
+  flex-shrink: 0;
+  background: none;
+  color: var(--color-muted);
+  padding: 0.2rem;
+}
+.homework-session-delete:hover {
+  background: none;
+  color: var(--color-error);
+}
 .homework-session-rename .material-symbols-outlined,
+.homework-session-delete .material-symbols-outlined,
 .homework-session-open .material-symbols-outlined {
   font-size: 1.15rem;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  deleteHomeworkSession,
   getHomeworkProgress,
   listHomework,
   openMaterialFile,
@@ -18,6 +19,8 @@ function formatDate(iso: string | null): string {
 interface HomeworkSessionRowProps {
   session: Session;
   onOpen: (sessionId: number) => void;
+  /** Told after the session is gone, so the page can drop the row. */
+  onDeleted?: (sessionId: number) => void;
 }
 
 /**
@@ -26,13 +29,18 @@ interface HomeworkSessionRowProps {
  * fetched per-row (not bulk-loaded by the page) so one slow/failed session
  * never blocks the rest of the list from rendering.
  */
-export function HomeworkSessionRow({ session, onOpen }: HomeworkSessionRowProps) {
+export function HomeworkSessionRow({
+  session,
+  onOpen,
+  onDeleted,
+}: HomeworkSessionRowProps) {
   const [progress, setProgress] = useState<HomeworkProgress | null>(null);
   const [files, setFiles] = useState<StudyMaterial[]>([]);
   const [title, setTitle] = useState(session.subtopic || "My homework");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -57,6 +65,22 @@ export function HomeworkSessionRow({ session, onOpen }: HomeworkSessionRowProps)
       setTitle(previous);
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** Deleting takes the conversation and the uploaded files with it, so it is
+   * confirmed rather than undoable. */
+  const remove = async () => {
+    const confirmed = window.confirm(
+      `Delete "${title}"? Its conversation and uploaded files go with it, and this cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await deleteHomeworkSession(session.id);
+      onDeleted?.(session.id);
+    } catch {
+      setDeleting(false);
     }
   };
 
@@ -110,19 +134,34 @@ export function HomeworkSessionRow({ session, onOpen }: HomeworkSessionRowProps)
       </button>
 
       {!editing && (
-        <button
-          type="button"
-          className="homework-session-rename"
-          onClick={(e) => {
-            e.stopPropagation();
-            startEditing();
-          }}
-          disabled={saving}
-          aria-label="Rename session"
-          title="Rename session"
-        >
-          <span className="material-symbols-outlined">edit</span>
-        </button>
+        <>
+          <button
+            type="button"
+            className="homework-session-rename"
+            onClick={(e) => {
+              e.stopPropagation();
+              startEditing();
+            }}
+            disabled={saving || deleting}
+            aria-label="Rename session"
+            title="Rename session"
+          >
+            <span className="material-symbols-outlined">edit</span>
+          </button>
+          <button
+            type="button"
+            className="homework-session-delete"
+            onClick={(e) => {
+              e.stopPropagation();
+              remove();
+            }}
+            disabled={deleting}
+            aria-label="Delete session"
+            title="Delete session"
+          >
+            <span className="material-symbols-outlined">delete</span>
+          </button>
+        </>
       )}
 
       <span className="homework-session-progress">

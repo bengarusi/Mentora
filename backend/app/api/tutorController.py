@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.dependencies import get_board_service, get_tutor_service, get_voice_service
+from app.api.dependencies import (
+    get_board_service,
+    get_storage,
+    get_tutor_service,
+    get_voice_service,
+)
+from app.files.storage import FileStorage
 from app.schemas.board import BoardLessonRequest, BoardListResponse, BoardResponse
 from app.schemas.material import HomeworkSessionCreate
 from app.schemas.session import SessionRename, SessionResponse
@@ -240,6 +246,22 @@ def rename_homework_session(
 ):
     """Let the student rename a Homework Help session from the Files page."""
     return tutor.rename_homework_session(session_id, body.title)
+
+
+@router.delete("/{session_id}/homework", status_code=status.HTTP_204_NO_CONTENT)
+def delete_homework_session(
+    session_id: int,
+    tutor: TutorService = Depends(get_tutor_service),
+    storage: FileStorage = Depends(get_storage),
+):
+    """Delete a Homework Help session, its conversation and its uploaded files.
+
+    The bytes are unlinked only after the rows are gone, so a storage failure
+    leaves an unreferenced file rather than a row pointing at nothing.
+    """
+    for key in tutor.delete_homework_session(session_id):
+        storage.delete(key)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{session_id}/homework/progress", response_model=HomeworkProgress)

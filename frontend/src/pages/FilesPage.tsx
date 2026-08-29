@@ -388,6 +388,11 @@ export function FilesPage() {
                     key={s.id}
                     session={s}
                     onOpen={(id) => navigate(`/homework/${id}`)}
+                    onDeleted={(id) =>
+                      setHomeworkSessions((prev) =>
+                        prev.filter((row) => row.id !== id)
+                      )
+                    }
                   />
                 ))}
               </div>

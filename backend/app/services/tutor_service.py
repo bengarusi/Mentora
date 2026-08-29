@@ -32,9 +32,12 @@ from app.lesson.state import (
 )
 from app.llm.provider import LLMError, LLMProvider
 from app.models.performance import Performance
+from app.models.agent_session_state import AgentSessionState
 from app.models.agent_trace import AgentTrace
+from app.models.board_explanation import BoardExplanation
 from app.models.session import LessonSession
 from app.models.student import Student
+from app.repositories.material_repo import MaterialRepository
 from app.repositories.session_repo import SessionRepository
 from app.schemas.practice import (
     GradedPracticeItem,
@@ -214,6 +217,45 @@ class TutorService:
         self.db.commit()
         self.db.refresh(session)
         return session
+
+    def delete_homework_session(self, session_id: int) -> list[str]:
+        """Delete a Homework Help session and everything hanging off it.
+
+        Returns the storage keys of the files it held, for the caller to unlink
+        once this has committed — the same ordering MaterialService uses, so a
+        storage failure can never leave a row pointing at deleted bytes.
+
+        Three tables reference a session without an ORM cascade (boards, agent
+        traces and agent state), so they are cleared here explicitly. Boards go
+        first: they also reference messages and questions, which the session's
+        own cascade is about to remove.
+        """
+        session = self._get_session(session_id)
+        if session.mode != SessionMode.HOMEWORK.value:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Only Homework Help sessions can be deleted here.",
+            )
+
+        keys = [
+            material.storage_key
+            for material in MaterialRepository(self.db).list_session_materials(session.id)
+            if material.storage_key
+        ]
+
+        for model in (BoardExplanation, AgentTrace, AgentSessionState):
+            self.db.query(model).filter(model.session_id == session.id).delete(
+                synchronize_session=False
+            )
+        self.db.delete(session)  # messages, questions, performance, materials cascade
+        self.db.commit()
+        log.info(
+            "homework session deleted session_id=%s student_id=%s files=%d",
+            session_id,
+            self.student.id,
+            len(keys),
+        )
+        return keys
 
     def get_homework_progress(self, session_id: int) -> HomeworkProgress:
         """How many of the homework's exercises the student has solved.

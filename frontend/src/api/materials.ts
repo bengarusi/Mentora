@@ -128,6 +128,11 @@ export async function renameHomeworkSession(
   return data;
 }
 
+/** Delete a homework session with its conversation and its uploaded files. */
+export async function deleteHomeworkSession(sessionId: number): Promise<void> {
+  await apiClient.delete(`/tutor/${sessionId}/homework`);
+}
+
 /** Ask the tutor to read the uploaded homework and open the conversation. */
 export async function analyzeHomework(sessionId: number): Promise<TurnResult> {
   const { data } = await apiClient.post<TurnResult>(
