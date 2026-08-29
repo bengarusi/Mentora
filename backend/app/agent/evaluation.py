@@ -6,6 +6,7 @@ from fractions import Fraction
 from typing import Protocol
 
 from app.agent.schemas import EvaluationResult, HomeworkExercise
+from app.files.homework import normalize_arithmetic
 from app.llm.provider import LLMError
 from app.math.normalizer import canonical_fraction_str, parse_to_fraction
 from app.math.router import MathRouterService
@@ -153,15 +154,18 @@ class AnswerEvaluator:
         # that is plainly right to a fallback that cannot record it.
         candidate = raw_candidate or _spoken_number_candidate(student_answer) or student_answer
 
+        # The parser sees the worksheet's arithmetic rewritten into a form it
+        # understands; the student still sees the question as it was written.
+        question = normalize_arithmetic(target.text)
         deterministic = None
         if target.expected_answer:
             deterministic = self.router.validate_student_answer(
-                target.text, target.expected_answer, candidate
+                question, target.expected_answer, candidate
             )
         if deterministic is None or deterministic.is_equivalent is None:
-            deterministic = self.router.verify_chat_answer(target.text, candidate)
+            deterministic = self.router.verify_chat_answer(question, candidate)
         if deterministic.is_equivalent is None:
-            deterministic = self._evaluate_equation(target.text, candidate)
+            deterministic = self._evaluate_equation(question, candidate)
 
         if deterministic.is_equivalent is not None:
             steps = tuple(deterministic.steps_data)

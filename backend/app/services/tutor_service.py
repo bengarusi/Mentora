@@ -18,7 +18,11 @@ from app.core.enums import (
     SuccessLevel,
 )
 from app.core.config import settings
-from app.files.homework import count_exercises, segment_exercises
+from app.files.homework import (
+    count_exercises,
+    normalize_arithmetic,
+    segment_exercises,
+)
 from app.lesson.context import LessonContext
 from app.lesson.state import (
     HomeworkHelpState,
@@ -420,7 +424,9 @@ class TutorService:
         for item in outline:
             if item.get("expected_answer"):
                 continue
-            computed = router.try_compute_correct_answer(item["text"], "0")
+            computed = router.try_compute_correct_answer(
+                normalize_arithmetic(item["text"]), "0"
+            )
             if computed.success and computed.canonical_answer:
                 item["expected_answer"] = computed.canonical_answer
                 continue

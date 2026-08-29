@@ -90,3 +90,43 @@ def test_digits_still_win_over_words():
 
     assert result.authoritative is True
     assert result.verdict is True
+
+
+# ---------------------------------------------------------------------------
+# Arithmetic as a worksheet writes it
+# ---------------------------------------------------------------------------
+
+def test_a_worksheets_multiplication_sign_is_understood():
+    """Worksheets write 7 x 8; only "*" was ever parsed, so it went unchecked."""
+    for text in ("What is 7 x 8?", "What is 7 × 8?", "Exercise 2: What is 7 x 8?"):
+        result = AnswerEvaluator(_GraderMustNotBeAsked()).evaluate(
+            "56", "exercise-1", [HomeworkExercise(ref="exercise-1", text=text)]
+        )
+        assert result.authoritative is True, text
+        assert result.verdict is True, text
+
+
+def test_a_wrong_answer_to_a_multiplication_is_still_authoritative():
+    result = AnswerEvaluator(_GraderMustNotBeAsked()).evaluate(
+        "54", "exercise-1", [HomeworkExercise(ref="exercise-1", text="What is 7 x 8?")]
+    )
+
+    assert result.authoritative is True
+    assert result.verdict is False
+
+
+def test_a_division_sign_is_understood():
+    result = AnswerEvaluator(_GraderMustNotBeAsked()).evaluate(
+        "3", "exercise-1", [HomeworkExercise(ref="exercise-1", text="What is 12 ÷ 4?")]
+    )
+
+    assert result.authoritative is True
+    assert result.verdict is True
+
+
+def test_algebra_keeps_its_x():
+    """The x in 2x + 3 is a variable, not a multiplication sign."""
+    from app.files.homework import normalize_arithmetic
+
+    assert normalize_arithmetic("Solve 2x + 3 = 11") == "Solve 2x + 3 = 11"
+    assert normalize_arithmetic("What is 7 x 8?") == "What is 7 * 8?"

@@ -15,6 +15,27 @@ _EXPECTED_ANSWER = re.compile(
 )
 
 
+_ARITHMETIC_REWRITES = (
+    # "7 x 8" and "7 × 8" are how worksheets write multiplication; the math
+    # parser only knows "*". The digit on both sides is what keeps this off
+    # algebra — the x in "2x + 3 = 11" has no digit after it.
+    (re.compile(r"(?<=\d)\s*[x×✕✖]\s*(?=\d)"), " * "),
+    (re.compile(r"(?<=\d)\s*[÷]\s*(?=\d)"), " / "),
+    (re.compile("[−–—]"), "-"),  # unicode minus and dashes
+)
+
+
+def normalize_arithmetic(text: str) -> str:
+    """Rewrite a worksheet's arithmetic into what the math parser reads.
+
+    Only for computing and checking answers — the student is still shown the
+    question as their worksheet wrote it.
+    """
+    for pattern, replacement in _ARITHMETIC_REWRITES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def count_exercises(text: str) -> int:
     """Best-effort count of distinct exercises in a homework document.
 
