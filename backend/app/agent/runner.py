@@ -11,7 +11,7 @@ from app.agent.reducer import StateReducer
 from app.agent.registry import ToolOutput, ToolRegistry, canonical_call_key, outline_from_json
 from app.agent.routing import should_evaluate_answer, wants_to_skip
 from app.agent.stores import AgentTraceStore, SessionStateStore, StudentProgressStore
-from app.agent.teacher import TeacherAgent
+from app.agent.teacher import TeacherAgent, stage_note
 from app.core.config import settings
 from app.llm.tool_protocol import ToolCallingLLM
 from app.llm.tooling import AgentStreamEvent, AssistantTurn, Msg, ToolCall
@@ -251,6 +251,12 @@ class AgentRunner:
                             delta=transition.mastery_delta,
                         )
                     content = output.evaluation.as_observation(state)
+                    # This answer may have been the last untouched exercise, in
+                    # which case the instructions the model was given before the
+                    # turn no longer describe where it now stands.
+                    stage = stage_note(state, outline)
+                    if stage:
+                        content["next_instruction"] = stage.strip()
                     self.trace_store.add(
                         run_id=run_id,
                         session_id=self.session.id,

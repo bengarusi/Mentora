@@ -6,6 +6,47 @@ from app.agent.schemas import HomeworkExercise, SessionState
 from app.llm.tooling import Msg
 
 
+def stage_note(state: SessionState, outline: list[HomeworkExercise]) -> str:
+    """What is left of the worksheet, and what to do about it.
+
+    Shared with the runner: after an answer settles the last untouched exercise,
+    the model has already been given its instructions for this turn, so the same
+    words go into the tool observation — otherwise the offer to return to parked
+    work arrives a turn late, after the student has said something else.
+    """
+    skipped = sorted(state.skipped_refs)
+    untouched = [
+        item.ref
+        for item in outline
+        if item.ref not in state.solved_refs and item.ref not in state.skipped_refs
+    ]
+    if not outline or untouched:
+        return ""
+    if not skipped:
+        return (
+            "\nEVERY exercise in this homework is now solved. Do not open another one and do "
+            "not re-ask a solved exercise. Congratulate the student, offer to go back over "
+            "anything they want to revisit, and append no control tag.\n"
+        )
+    # Nothing is left but parked work, so there is nowhere to move on to. The
+    # student may still decline, and is told what declining means rather than
+    # being quietly let off.
+    press = (
+        "This is all that is left of the homework. Do not offer to stop or to move on. If they "
+        "say no, tell them plainly that everything else is finished and this is the only work "
+        "left, and offer a first step or a hint rather than another way out."
+    )
+    if len(skipped) == 1:
+        return (
+            f"\nEverything is done except {skipped[0]}, which the student skipped earlier. "
+            f"Tell them that plainly and encourage them to try it now. {press}\n"
+        )
+    return (
+        f"\nEvery exercise has been reached. These were skipped and are still owed: "
+        f"{json.dumps(skipped)}. Ask which one they want to go back to, one at a time. {press}\n"
+    )
+
+
 class TeacherAgent:
     """Homework-only policy. It chooses tools and prose, never verdicts."""
 
@@ -66,27 +107,7 @@ class TeacherAgent:
                 f'\nThe exercise to work on right now is {current.ref}: "{current.text}". '
                 "Ask about this one and no other.\n"
             )
-        if not outline or untouched:
-            stage = ""
-        elif not skipped:
-            stage = (
-                "\nEVERY exercise in this homework is now solved. Do not open another one and do "
-                "not re-ask a solved exercise. Congratulate the student, offer to go back over "
-                "anything they want to revisit, and append no control tag.\n"
-            )
-        elif len(skipped) == 1:
-            stage = (
-                f"\nEverything is done except {skipped[0]}, which the student skipped earlier. "
-                "It is the only exercise left. Tell them that plainly and encourage them to try "
-                "it now — offer a first step or a hint rather than another way out. Do not offer "
-                "to move on, because there is nowhere left to move on to.\n"
-            )
-        else:
-            stage = (
-                f"\nEvery exercise has been reached, and these were skipped and are still owed: "
-                f"{json.dumps(skipped)}. Ask the student which one they would like to go back to, "
-                f"suggesting {current_ref}. Ask one at a time.\n"
-            )
+        stage = stage_note(state, outline)
         system = f"""You are Mentora's Homework Tutor. Guide, do not give away unsolved final answers.
 The server is the sole authority on correctness and state. When evaluateAnswer returns an
 authoritative verdict, obey it exactly and never re-grade it. For an incorrect answer, do not
