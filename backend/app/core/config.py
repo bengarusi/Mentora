@@ -69,6 +69,11 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    # Where the built SPA lives, for the single-service deployment in app/asgi.py.
+    # None -> frontend/dist/ in the repo (resolved there). The Docker image sets
+    # it because the build is copied outside the source tree.
+    FRONTEND_DIST_DIR: str | None = None
+
     LOG_LEVEL: str = "INFO"
     LOG_DIR: str | None = None  # None -> backend/logs/ (resolved in logging.config)
 

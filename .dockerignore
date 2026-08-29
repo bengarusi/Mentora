@@ -1,0 +1,39 @@
+# Build context hygiene: keep secrets, local state and dependency trees out of
+# the image. The frontend build stage installs from package-lock.json, so a
+# local node_modules is never needed.
+
+.git/
+.github/
+.claude/
+.idea/
+.vscode/
+
+# Secrets — supplied as environment variables by the host, never baked in.
+.env
+*.env
+backend/.env
+
+# Python local state
+**/__pycache__/
+*.pyc
+.pytest_cache/
+backend/.venv/
+backend/venv/
+
+# Node local state
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local runtime data — logs and student uploads live on the mounted volume.
+logs/
+backend/logs/
+storage/
+backend/storage/
+
+# Not needed at runtime
+backend/tests/
+docs/
+*.pdf
+*.docx
+*.zip
