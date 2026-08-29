@@ -43,6 +43,9 @@ class SessionState:
     response_target: ResponseTarget | None = None
     hint_level: int = 0
     solved_refs: frozenset[str] = frozenset()
+    #: Exercises the student chose to leave and come back to. Never counted as
+    #: solved — they are work still owed, parked rather than finished.
+    skipped_refs: frozenset[str] = frozenset()
     annotations: tuple[Annotation, ...] = ()
     materials_used: tuple[int, ...] = ()
     recent_evaluations: tuple[dict, ...] = ()

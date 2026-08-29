@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 
 from app.agent.schemas import (
@@ -12,16 +13,34 @@ from app.agent.schemas import (
 )
 
 
-def _next_unsolved_index(current: int, solved: frozenset[str] | set[str]) -> int:
-    """The next exercise still to do, skipping any already solved.
+def _next_index_to_offer(
+    current: int,
+    solved: frozenset[str] | set[str],
+    skipped: frozenset[str] | set[str] = frozenset(),
+    outline_refs: Sequence[str] = (),
+) -> int:
+    """Which exercise the student should be pointed at next.
 
-    A plain +1 walks back into work the student has finished whenever they solve
-    something out of order. Running past the end of the outline is the intended
-    "nothing left" signal — the prompt layer reads it from the refs, not from
-    this number, so no bound is needed here.
+    Untouched work first, in the order it appears on the worksheet. Only when
+    there is none left does the parked work come back around — that is what
+    makes a skip a postponement rather than a write-off. Running past the end of
+    the outline is the "nothing at all left" signal; the prompt layer reads that
+    from the refs rather than from this number.
+
+    Without an outline this degrades to walking forward off the current index,
+    which is all the older callers ever had.
     """
+    if outline_refs:
+        for index, ref in enumerate(outline_refs, start=1):
+            if ref not in solved and ref not in skipped:
+                return index
+        for index, ref in enumerate(outline_refs, start=1):
+            if ref in skipped:
+                return index
+        return len(outline_refs) + 1
+
     index = current + 1
-    while f"exercise-{index}" in solved:
+    while f"exercise-{index}" in solved or f"exercise-{index}" in skipped:
         index += 1
     return index
 
@@ -36,6 +55,7 @@ class StateReducer:
         *,
         run_id: str,
         max_hint_level: int = 4,
+        outline_refs: Sequence[str] = (),
     ) -> StateTransition:
         if not ev.authoritative or ev.verdict is None:
             return StateTransition(state, None)
@@ -81,12 +101,15 @@ class StateReducer:
             }
             if ev.target_type == "exercise":
                 solved = state.solved_refs | {ev.question_ref}
+                # Solving something that had been parked settles the debt.
+                skipped = state.skipped_refs - {ev.question_ref}
                 next_state = replace(
                     state,
-                    current_exercise_index=_next_unsolved_index(
-                        state.current_exercise_index, solved
+                    current_exercise_index=_next_index_to_offer(
+                        state.current_exercise_index, solved, skipped, outline_refs
                     ),
                     solved_refs=solved,
+                    skipped_refs=skipped,
                     **common,
                 )
             else:
@@ -99,6 +122,31 @@ class StateReducer:
                 applied_evaluation_keys=applied,
             )
         return StateTransition(next_state, MasteryDelta(ev.skill, ev.verdict))
+
+    @staticmethod
+    def skip(
+        state: SessionState, ref: str, outline_refs: Sequence[str] = ()
+    ) -> SessionState:
+        """Park the exercise the student wants to leave and move them on.
+
+        No mastery is recorded either way: giving up on a question is not
+        evidence that it was answered wrongly, only that it was not answered.
+        Solved work is never parked — asking for the next exercise after getting
+        one right is just asking for the next exercise.
+        """
+        if ref in state.solved_refs:
+            return state
+        skipped = state.skipped_refs | {ref}
+        return replace(
+            state,
+            skipped_refs=skipped,
+            current_exercise_index=_next_index_to_offer(
+                state.current_exercise_index, state.solved_refs, skipped, outline_refs
+            ),
+            hint_level=0,
+            awaiting_response=False,
+            response_target=None,
+        )
 
     @staticmethod
     def set_pending(

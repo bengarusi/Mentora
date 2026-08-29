@@ -273,7 +273,9 @@ export function HomeworkPage() {
                 onClick={() => sendMessage("I'm ready for the next exercise.")}
                 disabled={busy}
               >
-                Next exercise
+                {/* A skip, not an abandonment: the tutor brings every skipped
+                    exercise back once the rest of the worksheet is done. */}
+                Skip for now
               </button>
             </div>
 

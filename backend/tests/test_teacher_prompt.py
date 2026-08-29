@@ -33,9 +33,9 @@ def test_solved_and_unsolved_exercises_are_both_named():
 
     system = _system(state, _outline())
 
-    assert '"exercise-1"' in system.split("Still unsolved")[0].split("Solved:")[1]
-    unsolved = system.split("Still unsolved:")[1]
-    assert '"exercise-2"' in unsolved and '"exercise-3"' in unsolved
+    assert '"exercise-1"' in system.split("Skipped")[0].split("Solved:")[1]
+    remaining = system.split("Not yet reached:")[1]
+    assert '"exercise-2"' in remaining and '"exercise-3"' in remaining
 
 
 def test_finishing_every_exercise_is_stated_outright():

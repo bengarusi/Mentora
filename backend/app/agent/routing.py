@@ -35,6 +35,26 @@ _HELP_OR_NEXT_PATTERNS = tuple(
 )
 
 
+#: Asking to leave the current exercise for now. The quick action on the
+#: homework screen sends the first of these verbatim.
+_SKIP_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bready\s+for\s+the\s+next\b",
+        r"\bnext\s+(?:exercise|question|problem|one)\b",
+        r"\b(?:skip|move\s+on|come\s+back\s+to\s+(?:this|it))\b",
+        r"\bleave\s+(?:this|it)\s+for\s+(?:now|later)\b",
+        r"לתרגיל\s+הבא|לשאלה\s+הבאה|לדלג|תדלג|נדלג|לעבור\s+הלאה",
+    )
+)
+
+
+def wants_to_skip(text: str) -> bool:
+    """Whether the student is asking to leave this exercise for now."""
+    normalized = " ".join(text.strip().split())
+    return any(pattern.search(normalized) for pattern in _SKIP_PATTERNS)
+
+
 def is_explicit_non_answer(text: str) -> bool:
     normalized = " ".join(text.strip().split())
     return any(pattern.search(normalized) for pattern in _NON_ANSWER_PATTERNS)

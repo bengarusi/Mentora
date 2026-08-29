@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.reducer import StateReducer
 from app.agent.registry import ToolOutput, ToolRegistry, canonical_call_key, outline_from_json
-from app.agent.routing import should_evaluate_answer
+from app.agent.routing import should_evaluate_answer, wants_to_skip
 from app.agent.stores import AgentTraceStore, SessionStateStore, StudentProgressStore
 from app.agent.teacher import TeacherAgent
 from app.core.config import settings
@@ -90,6 +90,34 @@ class AgentRunner:
             if previous_reply:
                 yield AgentStreamEvent("text_delta", data=previous_reply)
             return
+
+        # Leaving an exercise for later is a state change, so the server makes
+        # it — the model is told what happened, not asked to agree to it. Doing
+        # it here rather than through a tool keeps the student's "next one
+        # please" from depending on the model recognising the phrasing.
+        outline_refs = [item.ref for item in outline]
+        if wants_to_skip(student_text):
+            current_ref = (
+                outline_refs[state.current_exercise_index - 1]
+                if 0 <= state.current_exercise_index - 1 < len(outline_refs)
+                else None
+            )
+            if current_ref and current_ref not in state.solved_refs:
+                before = state
+                state = StateReducer.skip(state, current_ref, outline_refs)
+                self.session_store.save(state)
+                self.trace_store.add(
+                    run_id=run_id,
+                    session_id=self.session.id,
+                    step=0,
+                    kind="state_transition",
+                    tool_name="skipExercise",
+                    result_json={
+                        "before": self._state_summary(before),
+                        "after": self._state_summary(state),
+                    },
+                )
+
         messages = self.teacher.messages(
             state=state,
             outline=outline,
@@ -208,6 +236,7 @@ class AgentRunner:
                         output.evaluation,
                         run_id=evaluation_run_id,
                         max_hint_level=settings.AGENT_MAX_HINT_LEVEL,
+                        outline_refs=outline_refs,
                     )
                     state = transition.next_state
                     self.session_store.save(state)

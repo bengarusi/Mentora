@@ -40,6 +40,7 @@ class SessionStateStore:
             response_target=target,
             hint_level=row.hint_level,
             solved_refs=frozenset(row.solved_refs or []),
+            skipped_refs=frozenset(row.skipped_refs or []),
             annotations=tuple(Annotation(**item) for item in (row.annotations or [])),
             materials_used=tuple(row.materials_used or []),
             recent_evaluations=tuple(row.recent_evaluations or []),
@@ -62,6 +63,7 @@ class SessionStateStore:
         row.response_target = asdict(state.response_target) if state.response_target else None
         row.hint_level = state.hint_level
         row.solved_refs = sorted(state.solved_refs)
+        row.skipped_refs = sorted(state.skipped_refs)
         row.annotations = [asdict(item) for item in state.annotations]
         row.materials_used = list(state.materials_used)
         row.recent_evaluations = list(state.recent_evaluations)

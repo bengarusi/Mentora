@@ -17,6 +17,7 @@ class AgentSessionState(Base):
     response_target = Column(JSON, nullable=True)
     hint_level = Column(Integer, nullable=False, default=0)
     solved_refs = Column(JSON, nullable=False, default=list)
+    skipped_refs = Column(JSON, nullable=False, default=list)
     annotations = Column(JSON, nullable=False, default=list)
     materials_used = Column(JSON, nullable=False, default=list)
     recent_evaluations = Column(JSON, nullable=False, default=list)
