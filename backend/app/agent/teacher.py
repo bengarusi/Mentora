@@ -105,7 +105,11 @@ class TeacherAgent:
         if current is not None:
             directive += (
                 f'\nThe exercise to work on right now is {current.ref}: "{current.text}". '
-                "Ask about this one and no other.\n"
+                "Ask about this one and no other, and end that question with its control tag: "
+                f'<response_target question_ref="{current.ref}" target_type="exercise"/>. '
+                "Without the tag nothing the student answers can be checked.\n"
+                "If their message is an attempt at this exercise, call evaluateAnswer for "
+                f"{current.ref} — you may never judge an answer yourself.\n"
             )
         stage = stage_note(state, outline)
         system = f"""You are Mentora's Homework Tutor. Guide, do not give away unsolved final answers.

@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.agent.reducer import StateReducer
 from app.agent.registry import ToolOutput, ToolRegistry, canonical_call_key, outline_from_json
-from app.agent.routing import should_evaluate_answer, wants_to_skip
+from app.agent.routing import (
+    is_explicit_non_answer,
+    should_evaluate_answer,
+    wants_to_skip,
+)
 from app.agent.stores import AgentTraceStore, SessionStateStore, StudentProgressStore
 from app.agent.teacher import TeacherAgent, stage_note
 from app.core.config import settings
@@ -129,10 +133,25 @@ class AgentRunner:
         )
         seen: dict[tuple[str, str], ToolOutput] = {}
         forced = should_evaluate_answer(student_text, state)
+        # Arming a target depends on the model remembering an invisible tag, and
+        # a forgotten one used to mean the next answer was never checked: the
+        # tutor congratulated the student and the exercise stayed unsolved. So
+        # while the current exercise is open the checking tool stays available
+        # even with nothing awaited — offered, not forced, since most turns are
+        # not answers. What it may rule on is still the server's call: the
+        # reducer only accepts evidence for the exercise the session is on.
+        # A message that says outright it is not an answer stays outside this:
+        # asking for a hint must never be turnable into evidence about a skill.
+        current_open = (
+            0 <= state.current_exercise_index - 1 < len(outline_refs)
+            and outline_refs[state.current_exercise_index - 1] not in state.solved_refs
+            and not is_explicit_non_answer(student_text)
+            and not wants_to_skip(student_text)
+        )
         exposed_tools = tuple(
             name
             for name in self.teacher.exposed_tools
-            if forced or name != "evaluateAnswer"
+            if forced or current_open or name != "evaluateAnswer"
         )
         schemas = self.registry.schemas(exposed_tools)
         allowed_tools = frozenset(exposed_tools)

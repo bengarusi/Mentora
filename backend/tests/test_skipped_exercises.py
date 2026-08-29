@@ -213,3 +213,53 @@ def test_without_a_skip_nothing_is_said_about_parking():
     state = SessionState(session_id=1, current_exercise_index=1)
 
     assert "PARKED" not in _system(state)
+
+
+def test_the_checking_tool_stays_available_while_the_exercise_is_open(db_session):
+    """A forgotten tag must not mean the next answer goes unchecked."""
+    from app.agent.runner import AgentRunner
+    from app.llm.tooling import AssistantTurn
+    from app.models.session import LessonSession
+    from tests.conftest import make_student
+    from tests.scripted_agent_llm import ScriptedAgentLLM
+
+    class CapturingLLM(ScriptedAgentLLM):
+        def __init__(self):
+            super().__init__([AssistantTurn(content="Have another go.")])
+            self.offered: list[str] = []
+
+        def stream_with_tools(self, messages, schemas, **kwargs):
+            self.offered = [schema.name for schema in schemas]
+            return super().stream_with_tools(messages, schemas, **kwargs)
+
+    student = make_student(db_session, email="open@example.com")
+    session = LessonSession(
+        student_id=student.id,
+        subject="math",
+        topic="Homework Help",
+        subtopic="Fractions",
+        goal_text="Finish",
+        mode="homework",
+        phase="homework_help",
+        homework_outline=[
+            {"ref": "exercise-1", "text": "Simplify 2/4"},
+            {"ref": "exercise-2", "text": "What is 7 x 8?"},
+        ],
+    )
+    db_session.add(session)
+    db_session.commit()
+
+    llm = CapturingLLM()
+    # Nothing awaited — exactly the state a forgotten tag leaves behind.
+    list(AgentRunner(db_session, llm, student, session).run_stream("56", turn_id="t"))
+
+    assert "evaluateAnswer" in llm.offered
+
+
+def test_the_prompt_asks_for_the_tag_by_name():
+    state = SessionState(session_id=1, current_exercise_index=2)
+
+    system = _system(state)
+
+    assert '<response_target question_ref="exercise-2" target_type="exercise"/>' in system
+    assert "you may never judge an answer yourself" in system
