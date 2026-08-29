@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from app.agent.schemas import SessionState
 
@@ -48,9 +49,24 @@ def should_evaluate_answer(text: str, state: SessionState) -> bool:
     )
 
 
-def might_need_tools(text: str, state: SessionState, *, has_outline: bool) -> bool:
+def might_need_tools(
+    text: str, state: SessionState, *, outline_refs: Sequence[str]
+) -> bool:
+    """Whether this turn needs the agent, or the cheaper chat reply will do.
+
+    The gap between exercises belongs to the agent too. Only an agent turn can
+    arm the next target, so a session that answers one exercise correctly and
+    then says "yes" to "shall we do the next one?" would otherwise hand every
+    remaining turn to the plain chat path — which grades nothing, records
+    nothing and can never arm a target again. The solved counter then stops at
+    one however much work the student does.
+    """
     if should_evaluate_answer(text, state):
         return True
-    if not has_outline:
+    if not outline_refs:
         return True
-    return any(pattern.search(text) for pattern in _HELP_OR_NEXT_PATTERNS)
+    if any(pattern.search(text) for pattern in _HELP_OR_NEXT_PATTERNS):
+        return True
+    return not state.awaiting_response and any(
+        ref not in state.solved_refs for ref in outline_refs
+    )

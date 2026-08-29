@@ -178,8 +178,9 @@ def _homework_agent_should_run(ctx: "LessonContext", text: str) -> bool:
     if not settings.AGENT_ENABLED_HOMEWORK or not isinstance(ctx.llm, ToolCallingLLM):
         return False
     state = SessionStateStore(ctx.db).load(ctx.session.id)
+    outline = outline_from_json(ctx.session.homework_outline)
     should_run = might_need_tools(
-        text, state, has_outline=bool(outline_from_json(ctx.session.homework_outline))
+        text, state, outline_refs=[item.ref for item in outline]
     )
     log.info(
         "homework agent route session_id=%s path=%s",

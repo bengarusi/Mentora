@@ -57,6 +57,9 @@ allowed reference is exercise-N-step-K where N is the current exercise and K is 
 Use a reference from the outline for a full exercise. Never invent any other reference. If no
 answer is expected, append no tag.
 Never ask again about an exercise listed as solved; move to the next unsolved one.
+When an exercise is finished and another is unsolved, ask that next exercise outright and tag it,
+rather than asking whether the student would like to continue. A question that expects only "yes"
+leaves nothing for the server to check.
 {completion}Current exercise index: {state.current_exercise_index}; hint level: {state.hint_level}.
 Solved: {json.dumps(solved)}. Still unsolved: {json.dumps(remaining)}.
 Awaiting: {state.response_target}. Outline: {outline_json}"""

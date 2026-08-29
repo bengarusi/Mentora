@@ -250,9 +250,15 @@ def test_agent_progress_is_derived_from_reducer_state_not_llm(
     assert progress.json() == {"total_exercises": 2, "solved_exercises": 1}
 
 
-def test_fast_path_uses_one_legacy_llm_call_and_zero_agent_calls(
+def test_chatting_with_no_exercise_left_uses_one_legacy_call_and_no_agent(
     db_session, monkeypatch
 ):
+    """The cheap path still exists — for turns with nothing left to arm.
+
+    While an exercise is unsolved and nothing is awaited, the agent has to run:
+    it is the only thing that can ask the next exercise and mark it as awaited.
+    Once the worksheet is finished, a conversational turn is just a conversation.
+    """
     class CountingFastPathLLM(ScriptedAgentLLM):
         def __init__(self):
             super().__init__([])
@@ -281,6 +287,14 @@ def test_fast_path_uses_one_legacy_llm_call_and_zero_agent_calls(
     )
     db_session.add(session)
     db_session.commit()
+    store = SessionStateStore(db_session)
+    state = store.load(session.id)
+    store.save(
+        SessionState(
+            **{**state.__dict__, "solved_refs": frozenset({"exercise-1"})}
+        )
+    )
+    db_session.commit()
     llm = CountingFastPathLLM()
 
     result = TutorService(db_session, llm, student).send_student_message_and_get_tutor_reply(
@@ -290,3 +304,38 @@ def test_fast_path_uses_one_legacy_llm_call_and_zero_agent_calls(
     assert result.tutor_message
     assert llm.legacy_calls == 1
     assert llm.agent_calls == 0
+
+
+def test_chatting_between_exercises_runs_the_agent(db_session, monkeypatch):
+    """The turn that used to strand a session now reaches the agent."""
+
+    class CountingAgentLLM(ScriptedAgentLLM):
+        def __init__(self):
+            super().__init__([AssistantTurn(content="Next up: what is 1/2 + 1/4?")])
+            self.agent_calls = 0
+
+        def stream_with_tools(self, *args, **kwargs):
+            self.agent_calls += 1
+            return super().stream_with_tools(*args, **kwargs)
+
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", True)
+    student = make_student(db_session, email="between@example.com")
+    session = LessonSession(
+        student_id=student.id,
+        subject="math",
+        topic="Homework Help",
+        subtopic="Fractions",
+        goal_text="Finish",
+        mode="homework",
+        phase="homework_help",
+        homework_outline=[{"ref": "exercise-1", "text": "Simplify 2/4"}],
+    )
+    db_session.add(session)
+    db_session.commit()
+    llm = CountingAgentLLM()
+
+    TutorService(db_session, llm, student).send_student_message_and_get_tutor_reply(
+        session.id, "yes", turn_id="turn-between"
+    )
+
+    assert llm.agent_calls == 1
