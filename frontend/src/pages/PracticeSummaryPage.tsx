@@ -200,13 +200,17 @@ export function PracticeSummaryPage() {
           ))}
 
           <div className="summary-actions">
+            {/* Named for what it does: this opens a fresh lesson on the same
+                subtopic and starts its chat over. This one stays exactly as it
+                is — its questions, its score and the progress they earned are
+                already saved. */}
             <button
               className="secondary-button pressable-button"
               onClick={handlePracticeAgain}
               disabled={busy || !session}
             >
               <span className="material-symbols-outlined">refresh</span>
-              Practice Again
+              Start New Lesson
             </button>
             <button
               className="primary-button pressable-button"
@@ -215,22 +219,6 @@ export function PracticeSummaryPage() {
             >
               {busy ? "Loading…" : "Continue to Lesson Summary"}
               {!busy && <span className="material-symbols-outlined">arrow_forward</span>}
-            </button>
-            {/* The lesson is still closed to chat here — continuing to the
-                summary is what reopens it. */}
-            <button
-              className="ghost-button pressable-button"
-              onClick={() => navigate(`/lesson/${id}`)}
-              disabled={busy}
-            >
-              Back to Lesson
-            </button>
-            <button
-              className="ghost-button pressable-button"
-              onClick={() => navigate("/")}
-              disabled={busy}
-            >
-              Choose Another Topic
             </button>
           </div>
         </div>

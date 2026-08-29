@@ -36,7 +36,9 @@ export function SummaryPage() {
     setBusy(true);
     try {
       await advancePhase(id); // SUMMARY → COMPLETED
-      setSession((prev) => (prev ? { ...prev, phase: "completed" } : prev));
+      // Straight to the progress page: the lesson is over, and what the student
+      // wants to see next is what it added up to.
+      navigate("/progress");
     } finally {
       setBusy(false);
     }
@@ -205,13 +207,16 @@ export function SummaryPage() {
                 Lesson completed
               </span>
             )}
+            {/* Same action, same name as on the practice results screen: it
+                opens a new lesson on this subtopic rather than reopening this
+                one, which is finished. */}
             <button
               className="secondary-button pressable-button"
               onClick={handlePracticeAgain}
               disabled={busy || !session}
             >
               <span className="material-symbols-outlined">refresh</span>
-              Practice Again
+              Start New Lesson
             </button>
             <button
               className="primary-button pressable-button"
