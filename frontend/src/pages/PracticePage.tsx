@@ -279,17 +279,10 @@ export function PracticePage() {
                 </div>
               ))}
 
-              <div className="page-footer-actions" style={{ justifyContent: "space-between" }}>
-                {/* Not "back to chat": the tutor does not answer while the
-                    student is being tested, so the lesson page has no composer
-                    in this phase. It reopens after the practice summary. */}
-                <button
-                  className="ghost-button pressable-button"
-                  onClick={() => navigate(`/lesson/${id}`)}
-                  disabled={busy}
-                >
-                  Back to Lesson
-                </button>
+              {/* No way back to the lesson from inside practice: the tutor does
+                  not answer while the student is being tested, so that page has
+                  nothing to offer until the practice is done with. */}
+              <div className="page-footer-actions" style={{ justifyContent: "flex-end" }}>
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <button
                     className="secondary-button pressable-button"

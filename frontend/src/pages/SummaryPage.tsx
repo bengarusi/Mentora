@@ -48,6 +48,15 @@ export function SummaryPage() {
     if (!session) return;
     setBusy(true);
     try {
+      // Moving on closes this lesson: it is already at its summary, so one step
+      // finishes it. Best-effort, like on the practice results screen.
+      if (session.phase === "summary") {
+        try {
+          await advancePhase(id); // SUMMARY → COMPLETED
+        } catch {
+          // Left open — nothing the student did is lost by it.
+        }
+      }
       const fresh = await createSession({
         subject: "math",
         topic: session.topic,
@@ -178,13 +187,6 @@ export function SummaryPage() {
                 </div>
               </div>
             )}
-            <button
-              className="secondary-button pressable-button"
-              onClick={handlePracticeAgain}
-              disabled={busy || !session}
-            >
-              Quick Practice
-            </button>
           </div>
 
           <div className="summary-actions">
@@ -207,9 +209,9 @@ export function SummaryPage() {
                 Lesson completed
               </span>
             )}
-            {/* Same action, same name as on the practice results screen: it
-                opens a new lesson on this subtopic rather than reopening this
-                one, which is finished. */}
+            {/* Same action, same name as on the practice results screen: this
+                lesson is finished, so it is closed and a new one on the same
+                subtopic takes its place. */}
             <button
               className="secondary-button pressable-button"
               onClick={handlePracticeAgain}
@@ -219,16 +221,10 @@ export function SummaryPage() {
               Start New Lesson
             </button>
             <button
-              className="primary-button pressable-button"
-              onClick={() => navigate("/")}
-            >
-              <span className="material-symbols-outlined">arrow_forward</span>
-              Continue Learning
-            </button>
-            <button
               className="ghost-button pressable-button"
               onClick={() => navigate("/")}
             >
+              <span className="material-symbols-outlined">arrow_forward</span>
               Choose Another Topic
             </button>
             <button

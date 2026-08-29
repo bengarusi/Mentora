@@ -47,6 +47,16 @@ export function PracticeSummaryPage() {
     if (!session) return;
     setBusy(true);
     try {
+      // Walking away from a lesson is still finishing it, so close it on the way
+      // out — otherwise it stays open forever and never counts as completed.
+      // Best-effort: the phases only move one step at a time, and a failure on
+      // either step must not cost the student the lesson they asked for.
+      try {
+        await advancePhase(id); // PRACTICE_SUMMARY → SUMMARY (writes the summary)
+        await advancePhase(id); // SUMMARY → COMPLETED
+      } catch {
+        // Left open — the work and the progress it earned are saved regardless.
+      }
       // Safe: start a fresh lesson for the same topic/subtopic rather than
       // forcing a completed session back into the practice phase.
       const fresh = await createSession({
@@ -200,17 +210,17 @@ export function PracticeSummaryPage() {
           ))}
 
           <div className="summary-actions">
-            {/* Named for what it does: this opens a fresh lesson on the same
-                subtopic and starts its chat over. This one stays exactly as it
-                is — its questions, its score and the progress they earned are
-                already saved. */}
+            {/* Named for what it does: this closes the lesson and opens a fresh
+                one on the same subtopic, starting its chat over. The finished
+                lesson keeps its questions, its score and the progress they
+                earned. */}
             <button
               className="secondary-button pressable-button"
               onClick={handlePracticeAgain}
               disabled={busy || !session}
             >
-              <span className="material-symbols-outlined">refresh</span>
-              Start New Lesson
+              {!busy && <span className="material-symbols-outlined">refresh</span>}
+              {busy ? "Starting…" : "Start New Lesson"}
             </button>
             <button
               className="primary-button pressable-button"
