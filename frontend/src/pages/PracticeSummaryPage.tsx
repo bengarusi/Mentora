@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { createSession, getSession } from "../api/sessions";
 import { advancePhase, getPracticeSummary } from "../api/tutor";
 import { LearningPathSidebar } from "../components/LearningPathSidebar";
 import { RichText } from "../components/RichText";
-import type { GradedPracticeItem, PracticeSummary, Session } from "../types";
+import type { GradedPracticeItem, PracticeSummary } from "../types";
 
 // Convert legacy flat "Step 1: ... Step 2: ..." strings to a markdown list.
 function normalizeSolutionSteps(steps: string): string {
@@ -24,49 +23,22 @@ export function PracticeSummaryPage() {
   const navigate = useNavigate();
 
   const [summary, setSummary] = useState<PracticeSummary | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     getPracticeSummary(id).then(setSummary).catch(() => null);
-    getSession(id).then(setSession).catch(() => null);
   }, [id]);
 
+  /** The one way out. Starting a new lesson is offered on the lesson summary
+   * instead: the summary is written for the student the moment this screen is
+   * left, and skipping straight past it wasted the thing they had just earned. */
   async function handleContinueToSummary() {
     setBusy(true);
     try {
       await advancePhase(id); // PRACTICE_SUMMARY → SUMMARY
       navigate(`/lesson/${id}/summary`);
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handlePracticeAgain() {
-    if (!session) return;
-    setBusy(true);
-    try {
-      // Walking away from a lesson is still finishing it, so close it on the way
-      // out — otherwise it stays open forever and never counts as completed.
-      // Best-effort: the phases only move one step at a time, and a failure on
-      // either step must not cost the student the lesson they asked for.
-      try {
-        await advancePhase(id); // PRACTICE_SUMMARY → SUMMARY (writes the summary)
-        await advancePhase(id); // SUMMARY → COMPLETED
-      } catch {
-        // Left open — the work and the progress it earned are saved regardless.
-      }
-      // Safe: start a fresh lesson for the same topic/subtopic rather than
-      // forcing a completed session back into the practice phase.
-      const fresh = await createSession({
-        subject: "math",
-        topic: session.topic,
-        subtopic: session.subtopic,
-        goal_text: session.goal_text,
-      });
-      navigate(`/lesson/${fresh.id}`);
-    } catch {
       setBusy(false);
     }
   }
@@ -210,18 +182,6 @@ export function PracticeSummaryPage() {
           ))}
 
           <div className="summary-actions">
-            {/* Named for what it does: this closes the lesson and opens a fresh
-                one on the same subtopic, starting its chat over. The finished
-                lesson keeps its questions, its score and the progress they
-                earned. */}
-            <button
-              className="secondary-button pressable-button"
-              onClick={handlePracticeAgain}
-              disabled={busy || !session}
-            >
-              {!busy && <span className="material-symbols-outlined">refresh</span>}
-              {busy ? "Starting…" : "Start New Lesson"}
-            </button>
             <button
               className="primary-button pressable-button"
               onClick={handleContinueToSummary}
