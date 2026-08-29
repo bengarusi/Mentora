@@ -280,12 +280,15 @@ export function PracticePage() {
               ))}
 
               <div className="page-footer-actions" style={{ justifyContent: "space-between" }}>
+                {/* Not "back to chat": the tutor does not answer while the
+                    student is being tested, so the lesson page has no composer
+                    in this phase. It reopens after the practice summary. */}
                 <button
                   className="ghost-button pressable-button"
                   onClick={() => navigate(`/lesson/${id}`)}
                   disabled={busy}
                 >
-                  Back to Chat
+                  Back to Lesson
                 </button>
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <button

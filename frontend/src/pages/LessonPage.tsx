@@ -22,15 +22,6 @@ const DIFFICULTY_LABEL: Record<DifficultyLevel, string> = {
   hard: "Hard",
 };
 
-const PHASE_ORDER: LessonPhase[] = [
-  "teaching",
-  "pre_practice_example",
-  "practice",
-  "practice_summary",
-  "summary",
-  "completed",
-];
-
 const PHASE_LABEL: Record<LessonPhase, string> = {
   teaching: "Teaching",
   pre_practice_example: "Guided Example",
@@ -189,8 +180,6 @@ export function LessonPage() {
   const pickingDifficulty = isTeaching && !session.difficulty;
   const canChat = (isTeaching && !pickingDifficulty) || phase === "summary";
   const nextDifficulty = session.difficulty ? NEXT_DIFFICULTY[session.difficulty] : null;
-  const progressPct =
-    ((PHASE_ORDER.indexOf(phase) + 1) / PHASE_ORDER.length) * 100;
 
   return (
     <div className="lesson-layout">
@@ -391,16 +380,7 @@ export function LessonPage() {
         </div>
 
         <div className="context-card">
-          <div className="mastery-block">
-            <div className="mastery-head">
-              <span>Lesson progress</span>
-              <span>{Math.round(progressPct)}%</span>
-            </div>
-            <div className="mastery-bar">
-              <span style={{ width: `${progressPct}%` }} />
-            </div>
-          </div>
-          <div className="context-row-label" style={{ marginTop: "0.25rem" }}>
+          <div className="context-row-label">
             Goal
           </div>
           <p style={{ margin: 0, fontSize: "0.9rem" }}>{session.goal_text}</p>

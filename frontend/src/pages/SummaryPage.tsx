@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { createSession, getSession } from "../api/sessions";
-import { getLessonSummary, getPracticeSummary } from "../api/tutor";
+import { advancePhase, getLessonSummary, getPracticeSummary } from "../api/tutor";
 import { LearningPathSidebar } from "../components/LearningPathSidebar";
 import { RichText } from "../components/RichText";
 import type { PracticeSummary, Session } from "../types";
@@ -29,6 +29,18 @@ export function SummaryPage() {
     getLessonSummary(id).then((r) => setSummaryText(r.summary_text)).catch(() => null);
     getSession(id).then(setSession).catch(() => null);
   }, [id]);
+
+  /** Close the lesson for good — the only route to the COMPLETED phase, and so
+   * the only thing that moves the "Completed" count on the progress page. */
+  async function handleFinishLesson() {
+    setBusy(true);
+    try {
+      await advancePhase(id); // SUMMARY → COMPLETED
+      setSession((prev) => (prev ? { ...prev, phase: "completed" } : prev));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handlePracticeAgain() {
     if (!session) return;
@@ -174,6 +186,25 @@ export function SummaryPage() {
           </div>
 
           <div className="summary-actions">
+            {/* The lesson ends here or nowhere: this is the screen every
+                finished lesson lands on, and until now nothing on it could
+                close one, so "Completed" on the progress page stayed at 0. */}
+            {session?.phase === "summary" && (
+              <button
+                className="primary-button pressable-button"
+                onClick={handleFinishLesson}
+                disabled={busy}
+              >
+                <span className="material-symbols-outlined">task_alt</span>
+                Finish Lesson
+              </button>
+            )}
+            {session?.phase === "completed" && (
+              <span className="status-badge mastered">
+                <span className="material-symbols-outlined">check_circle</span>
+                Lesson completed
+              </span>
+            )}
             <button
               className="secondary-button pressable-button"
               onClick={handlePracticeAgain}

@@ -122,13 +122,16 @@ export function ProgressPage() {
         </div>
         <div className="overview-stat">
           <span className="stat-value">{progress.completed_sessions}</span>
-          <span className="stat-label">Completed</span>
+          <span className="stat-label">Lessons completed</span>
         </div>
         <div className="overview-stat">
           <span className="stat-value">
             {hasQuestions ? `${progress.average_percentage?.toFixed(0)}%` : "—"}
           </span>
-          <span className="stat-label">Average score</span>
+          {/* Share of attempted questions answered correctly — not the progress
+              the topic bars below show, which only ever climbs. Named for what
+              it is so the two numbers stop reading as the same thing. */}
+          <span className="stat-label">Accuracy</span>
         </div>
         <div className="overview-stat">
           <span className="stat-value">

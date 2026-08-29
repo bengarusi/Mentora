@@ -216,12 +216,14 @@ export function PracticeSummaryPage() {
               {busy ? "Loading…" : "Continue to Lesson Summary"}
               {!busy && <span className="material-symbols-outlined">arrow_forward</span>}
             </button>
+            {/* The lesson is still closed to chat here — continuing to the
+                summary is what reopens it. */}
             <button
               className="ghost-button pressable-button"
               onClick={() => navigate(`/lesson/${id}`)}
               disabled={busy}
             >
-              Back to Chat
+              Back to Lesson
             </button>
             <button
               className="ghost-button pressable-button"
