@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { createSession, getSession } from "../api/sessions";
@@ -23,6 +23,8 @@ export function SummaryPage() {
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [busy, setBusy] = useState(false);
+  // One close per visit, even though React runs the effect twice in dev.
+  const closingRef = useRef(false);
 
   useEffect(() => {
     getPracticeSummary(id).then(setSummary).catch(() => null);
@@ -30,12 +32,33 @@ export function SummaryPage() {
     getSession(id).then(setSession).catch(() => null);
   }, [id]);
 
-  /** Close the lesson for good — the only route to the COMPLETED phase, and so
-   * the only thing that moves the "Completed" count on the progress page. */
+  /** Close the lesson for good.
+   *
+   * Reaching this screen is the end of the lesson — there is nothing left in it
+   * to do — so it is closed on arrival rather than by one privileged button.
+   * Otherwise leaving via "Choose Another Topic" left a lesson open forever with
+   * nothing on screen to say so, and the completed count could not be trusted.
+   * Best-effort: a failure costs the completion and nothing else, and is retried
+   * by the button below. */
+  const closeLesson = useCallback(async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    try {
+      await advancePhase(id); // SUMMARY → COMPLETED
+      setSession((prev) => (prev ? { ...prev, phase: "completed" } : prev));
+    } catch {
+      closingRef.current = false;
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (session?.phase === "summary") closeLesson();
+  }, [session?.phase, closeLesson]);
+
   async function handleFinishLesson() {
     setBusy(true);
     try {
-      await advancePhase(id); // SUMMARY → COMPLETED
+      await closeLesson();
       // Straight to the progress page: the lesson is over, and what the student
       // wants to see next is what it added up to.
       navigate("/progress");
@@ -48,15 +71,7 @@ export function SummaryPage() {
     if (!session) return;
     setBusy(true);
     try {
-      // Moving on closes this lesson: it is already at its summary, so one step
-      // finishes it. Best-effort, like on the practice results screen.
-      if (session.phase === "summary") {
-        try {
-          await advancePhase(id); // SUMMARY → COMPLETED
-        } catch {
-          // Left open — nothing the student did is lost by it.
-        }
-      }
+      await closeLesson(); // no-op if arriving here already closed it
       const fresh = await createSession({
         subject: "math",
         topic: session.topic,
@@ -190,25 +205,17 @@ export function SummaryPage() {
           </div>
 
           <div className="summary-actions">
-            {/* The lesson ends here or nowhere: this is the screen every
-                finished lesson lands on, and until now nothing on it could
-                close one, so "Completed" on the progress page stayed at 0. */}
-            {session?.phase === "summary" && (
-              <button
-                className="primary-button pressable-button"
-                onClick={handleFinishLesson}
-                disabled={busy}
-              >
-                <span className="material-symbols-outlined">task_alt</span>
-                Finish Lesson
-              </button>
-            )}
-            {session?.phase === "completed" && (
-              <span className="status-badge mastered">
-                <span className="material-symbols-outlined">check_circle</span>
-                Lesson completed
-              </span>
-            )}
+            {/* The lesson is already closed by the time this renders; the
+                button is where the student says they are done with the screen,
+                and it doubles as the retry if closing failed. */}
+            <button
+              className="primary-button pressable-button"
+              onClick={handleFinishLesson}
+              disabled={busy}
+            >
+              <span className="material-symbols-outlined">task_alt</span>
+              Finish Lesson
+            </button>
             {/* Same action, same name as on the practice results screen: this
                 lesson is finished, so it is closed and a new one on the same
                 subtopic takes its place. */}
@@ -220,18 +227,14 @@ export function SummaryPage() {
               <span className="material-symbols-outlined">refresh</span>
               Start New Lesson
             </button>
+            {/* "View Progress" lived here too, doing exactly what Finish Lesson
+                now does. */}
             <button
               className="ghost-button pressable-button"
               onClick={() => navigate("/")}
             >
               <span className="material-symbols-outlined">arrow_forward</span>
               Choose Another Topic
-            </button>
-            <button
-              className="ghost-button pressable-button"
-              onClick={() => navigate("/progress")}
-            >
-              View Progress
             </button>
           </div>
         </div>
