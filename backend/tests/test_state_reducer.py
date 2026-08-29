@@ -151,3 +151,21 @@ def test_authoritative_result_for_a_different_exercise_cannot_move_current_state
 
     assert stale.next_state == state
     assert stale.mastery_delta is None
+
+
+def test_advancing_skips_an_exercise_already_solved_out_of_order():
+    """A student who jumped ahead must not be walked back into finished work."""
+    state = SessionState(
+        session_id=7,
+        current_exercise_index=1,
+        awaiting_response=True,
+        response_target=ResponseTarget("exercise-1", "exercise"),
+        solved_refs=frozenset({"exercise-2", "exercise-3"}),
+    )
+
+    transition = StateReducer.reduce(state, _evaluation(verdict=True), run_id="run-1")
+
+    assert transition.next_state.current_exercise_index == 4
+    assert transition.next_state.solved_refs == frozenset(
+        {"exercise-1", "exercise-2", "exercise-3"}
+    )

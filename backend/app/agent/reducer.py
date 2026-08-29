@@ -12,6 +12,20 @@ from app.agent.schemas import (
 )
 
 
+def _next_unsolved_index(current: int, solved: frozenset[str] | set[str]) -> int:
+    """The next exercise still to do, skipping any already solved.
+
+    A plain +1 walks back into work the student has finished whenever they solve
+    something out of order. Running past the end of the outline is the intended
+    "nothing left" signal — the prompt layer reads it from the refs, not from
+    this number, so no bound is needed here.
+    """
+    index = current + 1
+    while f"exercise-{index}" in solved:
+        index += 1
+    return index
+
+
 class StateReducer:
     """Sole authority for homework-agent transitions; all methods are pure."""
 
@@ -66,10 +80,13 @@ class StateReducer:
                 "applied_evaluation_keys": applied,
             }
             if ev.target_type == "exercise":
+                solved = state.solved_refs | {ev.question_ref}
                 next_state = replace(
                     state,
-                    current_exercise_index=state.current_exercise_index + 1,
-                    solved_refs=state.solved_refs | {ev.question_ref},
+                    current_exercise_index=_next_unsolved_index(
+                        state.current_exercise_index, solved
+                    ),
+                    solved_refs=solved,
                     **common,
                 )
             else:
