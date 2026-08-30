@@ -32,9 +32,10 @@ def stage_note(state: SessionState, outline: list[HomeworkExercise]) -> str:
     # student may still decline, and is told what declining means rather than
     # being quietly let off.
     press = (
-        "This is all that is left of the homework. Do not offer to stop or to move on. If they "
-        "say no, tell them plainly that everything else is finished and this is the only work "
-        "left, and offer a first step or a hint rather than another way out."
+        "This is all that is left of the homework, so there is nothing to move on to and nothing "
+        "to stop for. If the student says they would rather stop or leave it, do NOT agree and do "
+        "NOT say goodbye. Say that everything else is finished and only this one is left, give "
+        "them the first step of it, and end by asking them what that step gives."
     )
     if len(skipped) == 1:
         return (
@@ -129,11 +130,11 @@ leaves nothing for the server to check.
 A student who asks to move on has already been moved on by the server: the exercise they left is
 listed as skipped and the current exercise below is the new one. Go straight to it — never tell
 them they must finish the one they just left.
-{stage}Current exercise index: {state.current_exercise_index} ({current_ref}); hint level: {state.hint_level}.
+Current exercise index: {state.current_exercise_index} ({current_ref}); hint level: {state.hint_level}.
 Solved: {json.dumps(solved)}. Skipped, still owed: {json.dumps(skipped)}.
 Not yet reached: {json.dumps(untouched)}.
 Awaiting: {state.response_target}. Outline: {outline_json}
-{directive}"""
+{directive}{stage}"""
         messages = [Msg("system", system)]
         messages.extend(Msg("assistant" if role == "tutor" else "user", content) for role, content in history)
         messages.append(Msg("user", student_text))

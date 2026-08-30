@@ -159,7 +159,7 @@ def test_reaching_the_end_with_several_skipped_asks_which_to_return_to():
     assert "Ask which one they want to go back to" in system
     assert '"exercise-2", "exercise-4"' in system
     assert "one at a time" in system
-    assert "Do not offer to stop or to move on" in system
+    assert "do NOT agree and do NOT say goodbye" in system
 
 
 def test_one_exercise_left_is_insisted_on():
@@ -173,8 +173,8 @@ def test_one_exercise_left_is_insisted_on():
     system = _system(state)
 
     assert "Everything is done except exercise-4" in system
-    assert "Do not offer to stop or to move on" in system
-    assert "this is the only work left" in system
+    assert "do NOT agree and do NOT say goodbye" in system
+    assert "only this one is left" in system
 
 
 def test_everything_solved_still_reads_as_finished():
