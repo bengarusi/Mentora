@@ -96,7 +96,17 @@ button {
   cursor: pointer;
   font-size: 0.95rem;
 }
-button:hover:not(:disabled) {
+/* Only repaint buttons that actually wear the generic purple fill above.
+   Card-shaped buttons set their own background, and this rule used to override
+   it on hover — painting the card purple while its text stayed dark, which left
+   the label unreadable (~2:1 contrast). Those components own their hover state;
+   they are listed here so the default never fights them. */
+button:hover:not(:disabled):not(
+  .topic-card, .subtopic-card, .board-card, .material-folder-row,
+  .homework-session-main, .flow-tab, .progress-topic-head, .app-sidebar-link,
+  .history-page-number, .link-button, .pill-button, .ghost-button,
+  .secondary-button, .back-link, .dropzone
+) {
   background: var(--primary-dark);
 }
 button:disabled {
@@ -566,7 +576,8 @@ textarea {
   font-family: var(--font-base);
   color: var(--color-text);
 }
-.topic-card:hover {
+.topic-card:hover:not(:disabled) {
+  border-color: var(--color-primary);
   box-shadow: var(--shadow-card);
   transform: translateY(-2px);
 }
@@ -646,7 +657,8 @@ textarea {
   font-family: var(--font-base);
   color: var(--color-text);
 }
-.subtopic-card:hover {
+.subtopic-card:hover:not(:disabled) {
+  border-color: var(--color-primary);
   box-shadow: var(--shadow-card);
   transform: translateY(-2px);
 }
