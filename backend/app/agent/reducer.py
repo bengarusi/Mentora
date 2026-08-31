@@ -124,6 +124,20 @@ class StateReducer:
         return StateTransition(next_state, MasteryDelta(ev.skill, ev.verdict))
 
     @staticmethod
+    def escalate_help(state: SessionState, *, max_hint_level: int = 4) -> SessionState:
+        """Move one rung up the help ladder because the student asked for help.
+
+        Only a wrong graded answer used to raise the hint level, so a student who
+        kept asking for help — never answering, so never graded — stayed on rung
+        zero and got the same reply every time. Asking again is itself the signal
+        that the last help was too big a step. No mastery is touched: asking for
+        help is not evidence about a skill.
+        """
+        return replace(
+            state, hint_level=min(state.hint_level + 1, max_hint_level)
+        )
+
+    @staticmethod
     def skip(
         state: SessionState, ref: str, outline_refs: Sequence[str] = ()
     ) -> SessionState:

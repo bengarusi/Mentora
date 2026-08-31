@@ -127,3 +127,56 @@ def test_explicit_skip_request_is_honored_even_without_an_attempt():
     assert "MOVE ON" in user
     assert "even if the current exercise was never answered" in user
     assert "Never refuse or insist on finishing" in user
+
+
+def test_chat_prompt_forbids_answering_the_question_it_asks():
+    """A tutor reply once read 'Not quite — 25/100 = **1/4**. Can you try again
+    and tell me what 25% is in simplest form?' — it solved the problem and then
+    asked for the solution, leaving the student nothing to do. 'Give one gentle
+    hint' alone did not rule that out, so the ban is stated explicitly."""
+    ctx = TutorContext(**BASE)
+    _, user = prompts.chat_prompt(ctx, "25/100")
+    assert "NEVER reveal the answer to a question you are still asking" in user
+    assert "A hint points at the NEXT STEP" in user
+
+
+def test_teaching_intro_question_is_not_answered_by_its_own_example():
+    """The intro ends with a worked example AND a question; without this rule
+    the model may ask exactly what the example just solved."""
+    ctx = TutorContext(**BASE)
+    _, user = prompts.teaching_intro_prompt(ctx)
+    assert "must NOT be one your worked example already answers" in user
+
+
+def test_the_correct_answer_handed_to_the_tutor_is_marked_private():
+    """The wrong-answer path hands the tutor the correct answer so it knows
+    which way to steer — and then asks it to re-ask the question. Without an
+    explicit ban the model simply wrote the answer out ("25/100 = **1/4**") and
+    asked for it in the next breath, leaving the student nothing to do.
+    """
+    from app.math.schemas import ToolResult
+
+    ctx = TutorContext(**BASE)
+    verification = ToolResult(
+        True, "sympy", canonical_answer="1/4", is_equivalent=False
+    )
+    _, user = prompts.chat_prompt(ctx, "25/100", verification=verification)
+
+    assert "the correct answer is 1/4" in user  # still given to the tutor
+    assert "FOR YOU ALONE" in user
+    assert "must NOT\nappear anywhere in your reply".replace("\n", " ") in " ".join(
+        user.split()
+    )
+
+
+def test_a_correct_answer_carries_no_secrecy_warning():
+    """Nothing to withhold once the student has already reached it."""
+    from app.math.schemas import ToolResult
+
+    ctx = TutorContext(**BASE)
+    verification = ToolResult(
+        True, "sympy", canonical_answer="1/4", is_equivalent=True
+    )
+    _, user = prompts.chat_prompt(ctx, "1/4", verification=verification)
+
+    assert "FOR YOU ALONE" not in user

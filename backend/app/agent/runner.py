@@ -11,6 +11,7 @@ from app.agent.reducer import StateReducer
 from app.agent.registry import ToolOutput, ToolRegistry, canonical_call_key, outline_from_json
 from app.agent.routing import (
     is_explicit_non_answer,
+    is_plea_for_help,
     should_evaluate_answer,
     wants_to_skip,
 )
@@ -124,8 +125,40 @@ class AgentRunner:
                     },
                 )
 
+        # Asking for help is itself the signal that the last help was too big a
+        # step. Without this the hint level only ever moved on a wrong graded
+        # answer, so a student who kept asking — and so was never graded — stayed
+        # on rung zero and got the same reply back every time.
+        #
+        # This turn is answered at the rung the student arrived on — their first
+        # plea gets the first rung, not a "you are STILL stuck" aimed at help
+        # that was never given. The escalation is persisted for the NEXT plea.
+        state_for_prompt = state
+        if (
+            just_skipped is None
+            and is_plea_for_help(student_text)
+            and 0 <= state.current_exercise_index - 1 < len(outline_refs)
+        ):
+            escalated = StateReducer.escalate_help(
+                state, max_hint_level=settings.AGENT_MAX_HINT_LEVEL
+            )
+            if escalated != state:
+                self.session_store.save(escalated)
+                self.trace_store.add(
+                    run_id=run_id,
+                    session_id=self.session.id,
+                    step=0,
+                    kind="state_transition",
+                    tool_name="escalateHelp",
+                    result_json={
+                        "before": self._state_summary(state),
+                        "after": self._state_summary(escalated),
+                    },
+                )
+            state = escalated
+
         messages = self.teacher.messages(
-            state=state,
+            state=state_for_prompt,
             outline=outline,
             history=history,
             student_text=student_text,

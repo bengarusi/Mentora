@@ -169,9 +169,16 @@ def test_non_answer_intent_cannot_invoke_evaluation_or_advance_state(db_session)
     state = SessionStateStore(db_session).load(session.id)
     assert state.current_exercise_index == 1
     assert state.solved_refs == frozenset()
-    assert db_session.query(AgentTrace).filter(
-        AgentTrace.kind == "state_transition"
-    ).count() == 0
+    # Asking for help does move the session one rung up the help ladder, which
+    # is a state transition. What must never happen is evidence about a skill:
+    # no evaluation may be applied and no mastery recorded.
+    transitions = (
+        db_session.query(AgentTrace)
+        .filter(AgentTrace.kind == "state_transition")
+        .all()
+    )
+    assert {trace.tool_name for trace in transitions} <= {"escalateHelp"}
+    assert state.applied_evaluation_keys == frozenset()
     exposed = {tool.name for tool in llm.calls[0]["tools"]}
     assert "evaluateAnswer" not in exposed
 
@@ -493,3 +500,181 @@ def test_tool_failure_becomes_an_observation_and_loop_still_finishes(db_session)
     tool_message = llm.calls[1]["messages"][-1]
     assert "invalid_arguments" in tool_message.content
     assert db_session.query(AgentTrace).filter(AgentTrace.kind == "error").count() == 1
+
+
+def test_repeated_pleas_for_help_climb_the_help_ladder(db_session):
+    """Asking for help again must not return the same reply again.
+
+    The hint level only ever moved on a wrongly graded answer, so a student who
+    kept asking for help — and so was never graded — stayed on rung zero and got
+    the identical message back every time.
+    """
+    student = make_student(db_session)
+    session = _session(db_session, student)
+    store = SessionStateStore(db_session)
+    store.save(
+        SessionState(
+            session_id=session.id,
+            awaiting_response=True,
+            response_target=ResponseTarget("exercise-1", "exercise"),
+        )
+    )
+
+    levels: list[int] = []
+    for _ in range(3):
+        llm = ScriptedAgentLLM([AssistantTurn(content="Here is a smaller step.")])
+        list(AgentRunner(db_session, llm, student, session).run_stream("can you give me a hint?"))
+        levels.append(store.load(session.id).hint_level)
+
+    assert levels == [1, 2, 3]
+    # Asking for help is never evidence about a skill.
+    assert store.load(session.id).solved_refs == frozenset()
+    assert db_session.query(StudentSkillMastery).count() == 0
+
+
+def test_each_rung_of_the_help_ladder_instructs_something_different(db_session):
+    """The prompt must actually change as the level climbs, or the model has no
+    way to know it already tried that rung."""
+    student = make_student(db_session)
+    session = _session(db_session, student)
+    store = SessionStateStore(db_session)
+
+    prompts: list[str] = []
+    # This turn is answered at the rung the student arrived on; the escalation is
+    # saved for their next plea. Rung 4 is the top — AGENT_MAX_HINT_LEVEL clamps
+    # there, so a student who stays stuck keeps the fullest help.
+    for level in range(5):
+        store.save(
+            SessionState(
+                session_id=session.id,
+                hint_level=level,
+                awaiting_response=True,
+                response_target=ResponseTarget("exercise-1", "exercise"),
+            )
+        )
+        llm = ScriptedAgentLLM([AssistantTurn(content="ok")])
+        list(AgentRunner(db_session, llm, student, session).run_stream("explain the method"))
+        prompts.append(llm.calls[0]["messages"][0].content)
+
+    assert len(set(prompts)) == len(prompts), "each rung must instruct something new"
+    for prompt in prompts:
+        assert "NEVER send the same message twice" in prompt
+        assert "send just a number" in prompt
+
+
+def test_the_reported_stuck_conversation_never_nags_and_never_repeats(db_session):
+    """End-to-end replay of the reported bug.
+
+    A student typed "i dont know", then "i dont know help", then clicked
+    "Give me a hint" three times. Every plea was force-graded as a math answer,
+    so the tutor answered each one with "please send just your answer as a
+    number", and once it stopped grading it repeated the same question verbatim.
+    """
+    student = make_student(db_session)
+    session = _session(db_session, student)
+    store = SessionStateStore(db_session)
+    store.save(
+        SessionState(
+            session_id=session.id,
+            awaiting_response=True,
+            response_target=ResponseTarget("exercise-1", "exercise"),
+        )
+    )
+
+    script = [
+        "i dont know",
+        "i dont know help",
+        "Can you give me a hint?",
+        "Can you give me a hint?",
+        "Can you give me a hint?",
+    ]
+    rungs: list[str] = []
+    for turn in script:
+        # A real help reply ends by asking the student something, so it re-arms
+        # the target — the tutor stays waiting on exercise-1 throughout.
+        llm = ScriptedAgentLLM(
+            [
+                AssistantTurn(
+                    content="Here is the next step.",
+                    pending_target=PendingTarget("exercise-1", "exercise"),
+                )
+            ]
+        )
+        list(AgentRunner(db_session, llm, student, session).run_stream(turn))
+        # Not one plea may be handed to the grader as an answer attempt.
+        assert "evaluateAnswer" not in {t.name for t in llm.calls[0]["tools"]}
+        system = llm.calls[0]["messages"][0].content
+        rungs.append(system.split("HELP LEVEL", 1)[1].split("\n", 1)[0])
+
+    # Each plea is met with different, larger help — never the same reply twice.
+    assert len(set(rungs[:5])) == 5, rungs
+    # None of it counted as evidence about what the student knows.
+    final = store.load(session.id)
+    assert final.solved_refs == frozenset()
+    assert final.applied_evaluation_keys == frozenset()
+    assert db_session.query(StudentSkillMastery).count() == 0
+
+    # A real answer still gets graded and still advances the worksheet.
+    llm = ScriptedAgentLLM(
+        [AssistantTurn(content="Correct! Now exercise 2.",
+                       pending_target=PendingTarget("exercise-2", "exercise"))]
+    )
+    list(AgentRunner(db_session, llm, student, session).run_stream("1/2"))
+    assert store.load(session.id).current_exercise_index == 2
+
+
+def test_thanks_does_not_burn_a_rung_of_the_help_ladder(db_session):
+    """Being polite is not being stuck.
+
+    The plea list and the wider non-answer list are deliberately different: a
+    courtesy must not consume help the student has not asked for.
+    """
+    student = make_student(db_session)
+    session = _session(db_session, student)
+    store = SessionStateStore(db_session)
+    store.save(
+        SessionState(
+            session_id=session.id,
+            hint_level=1,
+            awaiting_response=True,
+            response_target=ResponseTarget("exercise-1", "exercise"),
+        )
+    )
+
+    llm = ScriptedAgentLLM([AssistantTurn(content="You're welcome!")])
+    list(AgentRunner(db_session, llm, student, session).run_stream("thanks"))
+
+    assert store.load(session.id).hint_level == 1
+
+
+def test_a_plea_for_help_changes_only_the_hint_level(db_session):
+    """Escalating help must not corrupt anything else in the session.
+
+    The escalation writes state before the model runs, so this pins down that it
+    touches the hint level and nothing else — not the armed target, not the
+    solved set, not the exercise index.
+    """
+    student = make_student(db_session)
+    session = _session(db_session, student)
+    store = SessionStateStore(db_session)
+    before = SessionState(
+        session_id=session.id,
+        current_exercise_index=1,
+        awaiting_response=True,
+        response_target=ResponseTarget("exercise-1", "exercise"),
+    )
+    store.save(before)
+
+    llm = ScriptedAgentLLM(
+        [
+            AssistantTurn(
+                content="Let's take a smaller step.",
+                pending_target=PendingTarget("exercise-1", "exercise"),
+            )
+        ]
+    )
+    list(AgentRunner(db_session, llm, student, session).run_stream("i dont know"))
+
+    after = store.load(session.id)
+    assert after.hint_level == before.hint_level + 1
+    assert replace(after, hint_level=0) == replace(before, hint_level=0)

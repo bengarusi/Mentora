@@ -148,6 +148,9 @@ def teaching_intro_prompt(ctx: TutorContext) -> tuple[str, str]:
         "- Keep the explanation to 4-6 short sentences.\n"
         "- Include one concrete worked example (solve it step by step).\n"
         "- End by asking the student one small question about what was just explained.\n"
+        "- The closing question must NOT be one your worked example already answers.\n"
+        "  Solve one case in the example, then ask about a DIFFERENT case, so the student\n"
+        "  has to apply the idea instead of copying a line you already wrote.\n"
         "- Do NOT say 'Let's Practice' immediately — only suggest it after several correct answers.\n\n"
 
         "Required structure — use Markdown formatting:\n"
@@ -197,6 +200,11 @@ def _chat_verification_block(verification: "ToolResult | None") -> str:
         + ".\n"
         "You MUST treat it as wrong: give one gentle hint and ask them to try "
         "again. Do NOT tell the student it is correct.\n"
+        "The correct answer above is FOR YOU ALONE, so that you know which way "
+        "to steer them. You are still asking the student for it, so it must NOT "
+        "appear anywhere in your reply — not written out, not inside a worked "
+        "line, not in bold, not as 'the answer is ...'. Point at the next step "
+        "instead and let them produce it.\n"
     )
 
 
@@ -224,7 +232,20 @@ def chat_prompt(
         "Your job:\n"
         "- Respond helpfully to the student's message.\n"
         "- If the student answered a question correctly, celebrate it briefly and ask another small question.\n"
-        "- If the student answered incorrectly, give one gentle hint and ask again.\n"
+        "- If the student answered incorrectly, give one gentle hint and ask again.\n\n"
+
+        "NEVER reveal the answer to a question you are still asking:\n"
+        "- If you re-ask a question, your reply must NOT contain its answer anywhere —\n"
+        "  not in the explanation, not in a bullet, not in a worked line, not in bold.\n"
+        "- A hint points at the NEXT STEP the student should take. It never carries out\n"
+        "  that step for them. 'Both numbers divide by 25 — what do you get?' is a hint.\n"
+        "  '25/100 = **1/4**' is the answer, NOT a hint — never write a line like that\n"
+        "  and then ask the student for what it already states.\n"
+        "- Asking a question whose answer appears in the same reply leaves the student\n"
+        "  nothing to do. Before you send, re-read your reply: if it contains the answer\n"
+        "  to the question you are about to ask, delete the answer or ask a different question.\n"
+        "- Only state an answer once the student has already reached it, or when you have\n"
+        "  stopped asking and are explaining a worked example they are not being quizzed on.\n"
         "- Once you estimate the student has answered about 4-5 questions correctly total,\n"
         "  add an encouraging suggestion at the end of your reply:\n"
         "  'You're doing great — you seem ready to practice! Click the **Let's Practice** button when you feel ready.'\n\n"

@@ -48,6 +48,48 @@ def stage_note(state: SessionState, outline: list[HomeworkExercise]) -> str:
     )
 
 
+#: What a stuck student gets, by how long they have been stuck. Each rung does
+#: strictly more than the one before it.
+_HELP_RUNGS = (
+    "The student is stuck for the FIRST time. Do not re-ask the question as it "
+    "stands. Name what the exercise is about in one sentence, break it into the "
+    "smallest possible first step, and ask only that step.",
+    "The student is STILL stuck. Your last help was too big a step. Do not "
+    "repeat it — go smaller and more concrete: point at the exact numbers in "
+    "this exercise and say what operation joins them, then ask them to carry it "
+    "out.",
+    "The student has been stuck several times. Teach the METHOD outright, in "
+    "two or three short steps, then ask them to apply it to this exercise.",
+    "The student is badly stuck. Work through a SIMILAR example with DIFFERENT "
+    "numbers, start to finish, then ask them to do this exercise the same way.",
+    "The student has been stuck a long time. Walk through this exercise itself "
+    "step by step, but STOP one step short of the final answer and have them "
+    "finish that last step themselves.",
+)
+
+
+def _help_ladder(hint_level: int) -> str:
+    """The instruction for this turn's rung of the help ladder.
+
+    The state carried a hint level that nothing in the prompt ever explained, so
+    a student who asked for help twice got the same reply twice — the model had
+    no way to know it had already tried that rung. Repetition is what made the
+    tutor look broken, so the ban on it is explicit.
+    """
+    rung = _HELP_RUNGS[min(max(hint_level, 0), len(_HELP_RUNGS) - 1)]
+    return (
+        f"\nHELP LEVEL {hint_level}. {rung}\n"
+        "NEVER send the same message twice. Before replying, read your previous "
+        "messages in this conversation: if what you are about to say repeats one "
+        "of them, it is wrong — say something different and more helpful "
+        "instead. Repeating yourself teaches the student nothing and reads as a "
+        "broken tutor.\n"
+        "A student asking for help is NOT giving an answer: never tell them to "
+        "'send just a number' or ask them to answer again without adding new "
+        "help first. Give the help described above, then ask your question.\n"
+    )
+
+
 class TeacherAgent:
     """Homework-only policy. It chooses tools and prose, never verdicts."""
 
@@ -112,6 +154,7 @@ class TeacherAgent:
                 "If their message is an attempt at this exercise, call evaluateAnswer for "
                 f"{current.ref} — you may never judge an answer yourself.\n"
             )
+        directive += _help_ladder(state.hint_level)
         stage = stage_note(state, outline)
         system = f"""You are Mentora's Homework Tutor. Guide, do not give away unsolved final answers.
 The server is the sole authority on correctness and state. When evaluateAnswer returns an
