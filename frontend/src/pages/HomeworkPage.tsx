@@ -47,6 +47,7 @@ export function HomeworkPage() {
     sendMessage,
     toggleRecording,
     handleVoicePlaybackToggle,
+    speakTutorReply,
   } = useTutorChat(id);
 
   const [materials, setMaterials] = useState<StudyMaterial[]>([]);
@@ -91,18 +92,20 @@ export function HomeworkPage() {
     setBusy(true);
     setError(null);
     setAvatarState("thinking");
+    let startedSpeaking = false;
     try {
-      await analyzeHomework(id);
+      const result = await analyzeHomework(id);
       await reload();
+      startedSpeaking = await speakTutorReply(result.tutor_message);
     } catch {
       setError(
         "Your tutor couldn't read the homework just now. Please try again."
       );
     } finally {
-      setAvatarState("idle");
+      if (!startedSpeaking) setAvatarState("idle");
       setBusy(false);
     }
-  }, [id, reload, setAvatarState, setBusy]);
+  }, [id, reload, setAvatarState, setBusy, speakTutorReply]);
 
   const handleUpload = useCallback(
     async (files: File[]) => {

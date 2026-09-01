@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.core.enums import LessonPhase, MaterialStatus, MessageRole, SessionMode, Subject
 from app.files.retrieval import MaterialRetriever, get_material_retriever
 from app.llm.provider import LLMProvider, MaterialExcerpt, TutorContext
+from app.models.material import StudyMaterial
 from app.models.message import Message
 from app.models.session import LessonSession
 from app.models.student import Student
@@ -195,24 +196,32 @@ class LessonContext:
             )
         return excerpts
 
-    def _homework_text(self) -> str | None:
-        """Combined text of every homework file on this session, capped to the
-        same budget so a long worksheet still leaves room for the conversation."""
+    def _ready_homework_materials(self) -> list[StudyMaterial]:
         if self.session.mode != SessionMode.HOMEWORK.value:
-            return None
-        rows = [
-            m
-            for m in self.materials.list_session_materials(self.session.id)
-            if m.status == MaterialStatus.READY.value and m.extracted_text
+            return []
+        return [
+            material
+            for material in self.materials.list_session_materials(self.session.id)
+            if material.status == MaterialStatus.READY.value and material.extracted_text
         ]
+
+    def homework_source_documents(self) -> list[str]:
+        """Complete extracted bodies, retaining upload/page boundaries."""
+        return [material.extracted_text for material in self._ready_homework_materials()]
+
+    def _homework_text(self) -> str | None:
+        """Prompt-safe view of the homework, bounded to leave room for chat.
+
+        This budget is a presentation limit only. Question segmentation and
+        state read :meth:`homework_source_documents` instead — applying this
+        cap there used to erase every question after the first 4,000
+        characters.
+        """
+        rows = self._ready_homework_materials()
         if not rows:
             return None
-        budget = settings.MATERIAL_CONTEXT_CHAR_BUDGET
-        parts: list[str] = []
-        for material in rows:
-            if budget <= 0:
-                break
-            body = material.extracted_text[:budget]
-            budget -= len(body)
-            parts.append(f"--- {material.title or material.filename} ---\n{body}")
-        return "\n\n".join(parts)
+        source = "\n\n".join(
+            f"--- {material.title or material.filename} ---\n{material.extracted_text}"
+            for material in rows
+        )
+        return source[: settings.MATERIAL_CONTEXT_CHAR_BUDGET]

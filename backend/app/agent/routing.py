@@ -22,6 +22,9 @@ _PLEA_FOR_HELP_PATTERNS = tuple(
         # A bare plea for help, with or without padding: "help", "help me",
         # "i need help", "can you help me?".
         r"\bhelp\b",
+        r"\bguidance\b",
+        r"\bwalk\s+me\s+through\b",
+        r"\bpoint\s+me\s+in\s+the\s+right\s+direction\b",
         r"\b(?:i\s*'?m\s+|im\s+)?(?:stuck|lost|confused)\b",
         r"\b(?:give|show)\s+me\s+(?:a\s+)?hint\b",
         r"\bhint\b",
@@ -98,6 +101,9 @@ _CARRIES_A_NUMBER = re.compile(
     r"|half|halves|third|thirds|quarter|quarters|fourth|fourths)\b",
     re.IGNORECASE,
 )
+_QUESTION_REFERENCE = re.compile(
+    r"\b(?:question|exercise|problem)\s*#?\s*\d+\b", re.IGNORECASE
+)
 
 
 def carries_an_attempt(text: str) -> bool:
@@ -115,6 +121,8 @@ def is_explicit_non_answer(text: str) -> bool:
     send just your answer as a number" for a message that was never an answer.
     """
     normalized = " ".join(text.strip().split())
+    if is_plea_for_help(normalized):
+        return True
     if carries_an_attempt(normalized):
         return False
     return any(pattern.search(normalized) for pattern in _NON_ANSWER_PATTERNS)
@@ -128,9 +136,13 @@ def is_plea_for_help(text: str) -> bool:
     rung of the help ladder.
     """
     normalized = " ".join(text.strip().split())
-    if carries_an_attempt(normalized):
+    if not any(pattern.search(normalized) for pattern in _PLEA_FOR_HELP_PATTERNS):
         return False
-    return any(pattern.search(normalized) for pattern in _PLEA_FOR_HELP_PATTERNS)
+    # A question/exercise number identifies what needs help; it is not the
+    # student's mathematical answer. Any other number still makes this an
+    # attempt, preserving grading for messages such as "56, but I need help".
+    possible_answer = _QUESTION_REFERENCE.sub("", normalized)
+    return not carries_an_attempt(possible_answer)
 
 
 def should_evaluate_answer(text: str, state: SessionState) -> bool:

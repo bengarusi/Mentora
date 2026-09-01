@@ -32,6 +32,34 @@ def test_prefers_labeled_over_numbered_when_both_present():
     assert count_exercises(text) == 2
 
 
+def test_numbered_steps_after_the_only_labeled_exercise_are_not_questions():
+    text = (
+        "Exercise 1: Add the fractions.\n"
+        "1. Find a common denominator.\n"
+        "2. Add the numerators.\n"
+        "3. Simplify the result.\n"
+    )
+
+    assert count_exercises(text) == 1
+
+
+def test_mixed_question_markers_do_not_drop_the_unlabeled_questions():
+    """OCR can recognize one printed heading but transcribe the remaining
+    question numbers without their labels.  Every top-level question still
+    belongs in the worksheet total."""
+    text = (
+        "Question 1: One Star Point is worth 7 points. Emma has 8. How many points?\n"
+        "2. Write 0.6 as a fraction in simplest form.\n"
+        "3) Round 4.786 to the nearest tenth.\n"
+        "4. Simplify 18/30.\n"
+        "5) What is 25% of 80?\n"
+        "6. Calculate 36 ÷ 6.\n"
+        "7) What is 8 × 7?"
+    )
+
+    assert count_exercises(text) == 7
+
+
 def test_unstructured_text_counts_as_one_exercise():
     assert count_exercises("What is 1/2 + 1/4?") == 1
 

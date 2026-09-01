@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from app.core.enums import DifficultyLevel, LessonPhase, SuccessLevel
 from app.llm.provider import LLMError
+from app.lesson.reply_policy import ensure_tutor_reply_is_coherent
 from app.math.router import MathRouterService
 from app.math.schemas import ToolResult
 from app.models.assessment import AssessmentQuestion
@@ -96,6 +97,9 @@ class TeachingState(_ConversationalState):
         verdict = verify_chat_answer(tutor_ctx.recent_messages, text, ctx.llm)
         reply = ctx.llm.chat_reply(
             tutor_ctx, _annotate_math(text), verification=verdict
+        )
+        reply = ensure_tutor_reply_is_coherent(
+            reply, verdict, tutor_ctx.recent_messages
         )
         ctx.save_tutor_message_to_db(reply)
         return reply

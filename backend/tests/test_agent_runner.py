@@ -384,6 +384,65 @@ def test_invalid_model_target_cannot_clear_an_existing_server_target(db_session)
     assert state.response_target == expected
 
 
+def test_help_reply_cannot_display_a_different_exercise_than_server_state(db_session):
+    """Reject the visible half of a model-initiated question switch too.
+
+    Keeping the reducer on exercise 1 is not enough if the chat bubble asks
+    exercise 2; to the student, the question still changed underneath them.
+    """
+    student = make_student(db_session)
+    session = _session(db_session, student)
+    expected = ResponseTarget("exercise-1", "exercise")
+    SessionStateStore(db_session).save(
+        SessionState(
+            session_id=session.id,
+            awaiting_response=True,
+            response_target=expected,
+        )
+    )
+    llm = ScriptedAgentLLM(
+        [
+            AssistantTurn(
+                content="Let's switch. What is 1/2 + 1/4?",
+                pending_target=PendingTarget("exercise-2", "exercise"),
+            )
+        ]
+    )
+
+    reply = AgentRunner(db_session, llm, student, session).run("help me")
+
+    assert "Simplify 2/4" in reply
+    assert "1/2 + 1/4" not in reply
+    state = SessionStateStore(db_session).load(session.id)
+    assert state.current_exercise_index == 1
+    assert state.response_target == expected
+
+
+def test_help_without_a_declared_target_keeps_and_displays_the_current_question(
+    db_session,
+):
+    student = make_student(db_session)
+    session = _session(db_session, student)
+    expected = ResponseTarget("exercise-1", "exercise")
+    SessionStateStore(db_session).save(
+        SessionState(
+            session_id=session.id,
+            awaiting_response=True,
+            response_target=expected,
+        )
+    )
+    llm = ScriptedAgentLLM(
+        [AssistantTurn(content="Try a completely different example.")]
+    )
+
+    reply = AgentRunner(db_session, llm, student, session).run("help me")
+
+    assert "Simplify 2/4" in reply
+    state = SessionStateStore(db_session).load(session.id)
+    assert state.awaiting_response is True
+    assert state.response_target == expected
+
+
 def test_agent_traces_store_metadata_not_student_or_material_content(db_session):
     student = make_student(db_session)
     session = _session(db_session, student)
@@ -496,7 +555,8 @@ def test_tool_failure_becomes_an_observation_and_loop_still_finishes(db_session)
 
     text = AgentRunner(db_session, llm, student, session).run("help")
 
-    assert text == "Let's continue without that note."
+    assert "Simplify 2/4" in text
+    assert len(llm.calls) == 2
     tool_message = llm.calls[1]["messages"][-1]
     assert "invalid_arguments" in tool_message.content
     assert db_session.query(AgentTrace).filter(AgentTrace.kind == "error").count() == 1

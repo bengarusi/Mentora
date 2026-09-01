@@ -8,6 +8,7 @@ the "TTS failure must not break text streaming" guarantee.
 import base64
 import json
 from collections.abc import Iterator
+from threading import Lock
 
 from app.api.dependencies import get_voice_service
 from app.main import app
@@ -113,6 +114,88 @@ def test_speech_stream_tts_failure_still_streams_text(client):
     assert events[-1]["type"] == "done"
     assert "audio_start" not in types
     assert "audio_delta" not in types
+
+
+def test_speech_stream_retries_one_transient_tts_failure_without_duplicate_audio(client):
+    class TransientVoice:
+        def __init__(self):
+            self.calls: list[str] = []
+            self.failed_text: str | None = None
+            self.lock = Lock()
+
+        def iter_speech_audio(self, text: str):
+            with self.lock:
+                self.calls.append(text)
+                should_fail = self.failed_text is None
+                if should_fail:
+                    self.failed_text = text
+            if should_fail:
+                raise VoiceServiceError("temporary tts failure")
+            yield b"recovered-mp3"
+
+    voice = TransientVoice()
+    headers = auth_headers(client)
+    session_id = _create_session(client, headers)
+    _use_voice(voice)
+
+    resp = client.post(
+        f"/tutor/{session_id}/turn/speech-stream",
+        json={"content": "hello tutor"},
+        headers=headers,
+    )
+
+    events = _parse_ndjson(resp.text)
+    starts = [e["chunk_id"] for e in events if e["type"] == "audio_start"]
+    assert len(voice.calls) >= 2
+    # Chunks synthesize concurrently, so another chunk may start between the
+    # failed attempt and its retry. The failed text itself must be attempted
+    # exactly twice; call adjacency is intentionally not part of the contract.
+    assert voice.failed_text is not None
+    assert voice.calls.count(voice.failed_text) == 2
+    assert starts == list(range(1, len(starts) + 1))
+    assert starts, "the transiently failed phrase must still be spoken"
+
+
+def test_speech_stream_recovers_one_permanently_failed_streaming_chunk_once(client):
+    class PartialFailureVoice:
+        def __init__(self):
+            self.stream_calls: list[str] = []
+            self.fallback_calls: list[str] = []
+            self.failed_text: str | None = None
+            self.lock = Lock()
+
+        def iter_speech_audio(self, text: str):
+            with self.lock:
+                self.stream_calls.append(text)
+                if self.failed_text is None:
+                    self.failed_text = text
+                should_fail = text == self.failed_text
+            if should_fail:
+                raise VoiceServiceError("streaming tts stays unavailable")
+            yield b"streamed-mp3"
+
+        def synthesize_speech(self, text: str):
+            self.fallback_calls.append(text)
+            return base64.b64encode(b"fallback-mp3").decode("ascii")
+
+    voice = PartialFailureVoice()
+    headers = auth_headers(client)
+    session_id = _create_session(client, headers)
+    _use_voice(voice)
+
+    resp = client.post(
+        f"/tutor/{session_id}/turn/speech-stream",
+        json={"content": "hello tutor"},
+        headers=headers,
+    )
+
+    events = _parse_ndjson(resp.text)
+    starts = [e["chunk_id"] for e in events if e["type"] == "audio_start"]
+    assert voice.failed_text is not None
+    assert voice.stream_calls.count(voice.failed_text) == 2
+    assert voice.fallback_calls == [voice.failed_text]
+    assert starts == list(range(1, len(starts) + 1))
+    assert len(starts) == len(set(voice.stream_calls))
 
 
 def test_speech_stream_wrong_phase_returns_409(client):

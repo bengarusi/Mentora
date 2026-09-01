@@ -58,6 +58,7 @@ export function LessonPage() {
     sendMessage,
     toggleRecording,
     handleVoicePlaybackToggle,
+    speakTutorReply,
   } = useTutorChat(id);
 
   const board = useBoardExplanation(id);
@@ -129,17 +130,23 @@ export function LessonPage() {
     async (level: DifficultyLevel) => {
       setBusy(true);
       setAvatarState("thinking");
+      let startedSpeaking = false;
       try {
-        await setLessonDifficulty(id, level);
+        const result = await setLessonDifficulty(id, level);
         await reload();
-        setAvatarState("idle");
+        // When the board feature is active, its narration owns this opening;
+        // otherwise this complete (non-streaming) tutor reply needs explicit TTS.
+        if (!board.enabled) {
+          startedSpeaking = await speakTutorReply(result.tutor_message);
+        }
       } catch {
         setAvatarState("idle");
       } finally {
+        if (!startedSpeaking) setAvatarState("idle");
         setBusy(false);
       }
     },
-    [id, reload]
+    [board.enabled, id, reload, speakTutorReply]
   );
 
   async function handleStartPractice() {

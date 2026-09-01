@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getMessages, getSession } from "../api/sessions";
-import { sendVoiceTurn, streamSpeechTurn, streamTurn } from "../api/tutor";
+import {
+  sendVoiceTurn,
+  speakTutorMessage,
+  streamSpeechTurn,
+  streamTurn,
+} from "../api/tutor";
 import type { AvatarState } from "../components/TeacherAvatar";
 import type { Message, Session, ToolActivity } from "../types";
 
@@ -203,6 +208,9 @@ export function useTutorChat(id: number) {
         streamAbortRef.current = controller;
         let firstText = false;
         let firstAudio = false;
+        let fullTutorText = "";
+        let completedAudioChunks = 0;
+        let streamCompleted = false;
         try {
           await streamSpeechTurn(
             id,
@@ -212,6 +220,7 @@ export function useTutorChat(id: number) {
               onTextDelta: (delta) => {
                 if (gen !== turnGenRef.current) return;
                 if (!firstText) { firstText = true; debugTime("first_text_delta_received"); }
+                fullTutorText += delta;
                 appendTutor(delta);
               },
               onAudioChunk: (chunkId, bytes) => {
@@ -226,6 +235,7 @@ export function useTutorChat(id: number) {
                 const parts = chunkBytesRef.current.get(chunkId) ?? [];
                 chunkBytesRef.current.delete(chunkId);
                 if (parts.length === 0) return;
+                completedAudioChunks += 1;
                 const blob = new Blob(parts as BlobPart[], { type: "audio/mpeg" });
                 readyChunksRef.current.set(chunkId, URL.createObjectURL(blob));
                 debugTime("first_audio_chunk_completed");
@@ -243,10 +253,14 @@ export function useTutorChat(id: number) {
               },
               onDone: () => {
                 if (gen !== turnGenRef.current) return;
+                streamCompleted = true;
                 streamDoneRef.current = true;
                 debugTime("stream_done");
                 // Stream finished with no audio left to play → idle now.
+                // With no completed audio at all, keep the thinking state until
+                // the full-message fallback below has had a chance to speak.
                 if (
+                  completedAudioChunks > 0 &&
                   !isPlayingRef.current &&
                   audioQueueRef.current.length === 0 &&
                   readyChunksRef.current.size === 0
@@ -279,6 +293,30 @@ export function useTutorChat(id: number) {
             },
             controller.signal
           );
+          // A transient streaming-TTS failure is represented by a normal text
+          // stream with no audio events. Voice is still enabled, so retry the
+          // completed tutor message through the non-streaming TTS endpoint.
+          // This branch is deliberately all-or-nothing: once any streamed audio
+          // completed, replaying the full message would speak part of it twice.
+          if (
+            gen === turnGenRef.current &&
+            streamCompleted &&
+            completedAudioChunks === 0 &&
+            fullTutorText.trim()
+          ) {
+            const audio = await speakTutorMessage(id, fullTutorText.trim());
+            if (gen === turnGenRef.current && audio) {
+              playTutorAudio(audio);
+            } else if (gen === turnGenRef.current) {
+              setAvatarState("idle");
+            }
+          } else if (
+            gen === turnGenRef.current &&
+            streamCompleted &&
+            completedAudioChunks === 0
+          ) {
+            setAvatarState("idle");
+          }
         } catch (err) {
           // AbortError from barge-in is expected; anything else → recover.
           if ((err as Error)?.name !== "AbortError" && gen === turnGenRef.current) {
@@ -334,7 +372,7 @@ export function useTutorChat(id: number) {
         }
       }
     },
-    [busy, id, reload, voicePlayback, stopSpeechAndAudio]
+    [busy, id, playTutorAudio, reload, voicePlayback, stopSpeechAndAudio]
   );
 
   // Called once the recorder has stopped and we have the audio blob.
@@ -390,6 +428,33 @@ export function useTutorChat(id: number) {
       }
     },
     [stopSpeechAndAudio]
+  );
+
+  // Speak tutor replies produced by non-chat actions (difficulty selection,
+  // homework analysis). Those endpoints return complete text rather than the
+  // speech-stream protocol, so pages hand the fresh reply back here instead of
+  // reloading it silently or replaying history on mount.
+  const speakTutorReply = useCallback(
+    async (text: string): Promise<boolean> => {
+      const spoken = text.trim();
+      if (!voicePlayback || !spoken) return false;
+      stopSpeechAndAudio();
+      const gen = turnGenRef.current;
+      setAvatarState("thinking");
+      try {
+        const audio = await speakTutorMessage(id, spoken);
+        if (gen !== turnGenRef.current || !audio) {
+          if (gen === turnGenRef.current) setAvatarState("idle");
+          return false;
+        }
+        playTutorAudio(audio);
+        return true;
+      } catch {
+        if (gen === turnGenRef.current) setAvatarState("idle");
+        return false;
+      }
+    },
+    [id, playTutorAudio, stopSpeechAndAudio, voicePlayback]
   );
 
   const startRecording = useCallback(async () => {
@@ -461,6 +526,7 @@ export function useTutorChat(id: number) {
     sendMessage,
     toggleRecording,
     handleVoicePlaybackToggle,
+    speakTutorReply,
     stopSpeechAndAudio,
   };
 }

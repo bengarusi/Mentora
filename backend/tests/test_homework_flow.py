@@ -308,6 +308,195 @@ def test_progress_counts_total_exercises_from_the_upload(api):
     assert progress["solved_exercises"] == 0
 
 
+def test_seven_mixed_format_image_questions_survive_upload_analysis_and_resume(
+    api, session_factory, monkeypatch
+):
+    """Replay the full image-homework pipeline after OCR has returned text.
+
+    One label plus six bare numbers is the shape that used to collapse to one
+    outline item. The API total, stored tutor outline, ordering, and resumed
+    session must all agree on seven.
+    """
+    from app.files.extraction import ExtractedDocument, ImageVisionExtractor
+    from app.models.session import LessonSession
+
+    homework = (
+        "Question 1: One Star Point is worth 7 points. Emma has 8. How many points?\n"
+        "2. Write 0.6 as a fraction in simplest form.\n"
+        "3) Round 4.786 to the nearest tenth.\n"
+        "4. Simplify 18/30.\n"
+        "5) What is 25% of 80?\n"
+        "6. Calculate 36 ÷ 6.\n"
+        "7) What is 8 × 7?"
+    )
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", True)
+    monkeypatch.setattr(
+        ImageVisionExtractor,
+        "extract",
+        lambda self, data, filename: ExtractedDocument(homework, page_count=1),
+    )
+    headers = auth_headers(api)
+    session = _start_homework(api, headers)
+
+    upload = api.post(
+        f"/materials/homework/{session['id']}",
+        files={"file": ("seven-questions.png", b"fake-image", "image/png")},
+        headers=headers,
+    )
+    assert upload.status_code == 201, upload.text
+    assert api.post(
+        f"/tutor/{session['id']}/homework/analyze", headers=headers
+    ).status_code == 200
+
+    progress = api.get(
+        f"/tutor/{session['id']}/homework/progress", headers=headers
+    ).json()
+    assert progress == {"total_exercises": 7, "solved_exercises": 0}
+    with session_factory() as db:
+        stored = db.get(LessonSession, session["id"])
+        assert [item["ref"] for item in stored.homework_outline] == [
+            f"exercise-{index}" for index in range(1, 8)
+        ]
+        assert [item["text"] for item in stored.homework_outline] == homework.splitlines()
+
+    # A fresh request is the backend half of reload/resume: it must read the
+    # persisted material and outline rather than a process-local parse result.
+    resumed = api.get("/tutor/homework", headers=headers).json()
+    assert [item["id"] for item in resumed] == [session["id"]]
+    assert api.get(
+        f"/tutor/{session['id']}/homework/progress", headers=headers
+    ).json()["total_exercises"] == 7
+
+
+def test_outline_parses_the_complete_file_not_the_llm_prompt_budget(
+    api, session_factory, monkeypatch
+):
+    """The LLM sees a bounded excerpt, but server-owned question state must not.
+
+    A verbose first problem can consume the 4,000-character material prompt
+    budget. The six questions after it still need stable refs and answers.
+    """
+    from app.models.session import LessonSession
+
+    homework = (
+        "Question 1: Read this scenario, then answer. "
+        + ("background detail " * 260)
+        + "\n2. What is 2 + 2?\n"
+        "3. What is 3 + 3?\n"
+        "4. What is 4 + 4?\n"
+        "5. What is 5 + 5?\n"
+        "6. What is 6 + 6?\n"
+        "7. What is 7 + 7?"
+    )
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", True)
+    headers = auth_headers(api)
+    session = _start_homework(api, headers)
+    assert _upload_homework(
+        api, headers, session["id"], text=homework, name="long-homework.txt"
+    ).status_code == 201
+
+    assert api.post(
+        f"/tutor/{session['id']}/homework/analyze", headers=headers
+    ).status_code == 200
+
+    with session_factory() as db:
+        outline = db.get(LessonSession, session["id"]).homework_outline
+        assert [item["ref"] for item in outline] == [
+            f"exercise-{index}" for index in range(1, 8)
+        ]
+        assert outline[-1]["text"] == "7. What is 7 + 7?"
+
+
+def test_each_uploaded_page_is_parsed_before_global_question_refs_are_assigned(
+    api, session_factory, monkeypatch
+):
+    """Question numbering commonly restarts on a second uploaded page."""
+    from app.models.session import LessonSession
+
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", True)
+    headers = auth_headers(api)
+    session = _start_homework(api, headers)
+    assert _upload_homework(
+        api,
+        headers,
+        session["id"],
+        text="Question 1: What is 2 + 2?",
+        name="page-one.txt",
+    ).status_code == 201
+    assert _upload_homework(
+        api,
+        headers,
+        session["id"],
+        text="1. What is 3 + 3?\n2. What is 4 + 4?",
+        name="page-two.txt",
+    ).status_code == 201
+
+    assert api.post(
+        f"/tutor/{session['id']}/homework/analyze", headers=headers
+    ).status_code == 200
+
+    assert api.get(
+        f"/tutor/{session['id']}/homework/progress", headers=headers
+    ).json()["total_exercises"] == 3
+    with session_factory() as db:
+        outline = db.get(LessonSession, session["id"]).homework_outline
+        assert [item["ref"] for item in outline] == [
+            "exercise-1",
+            "exercise-2",
+            "exercise-3",
+        ]
+        assert [item["text"] for item in outline] == [
+            "Question 1: What is 2 + 2?",
+            "1. What is 3 + 3?",
+            "2. What is 4 + 4?",
+        ]
+
+
+def test_reanalysis_keeps_the_current_question_when_another_page_is_added(
+    api, session_factory, monkeypatch
+):
+    from app.agent.schemas import ResponseTarget, SessionState
+    from app.agent.stores import SessionStateStore
+
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", True)
+    headers = auth_headers(api)
+    session = _start_homework(api, headers)
+    _upload_homework(
+        api,
+        headers,
+        session["id"],
+        text="1. What is 2 + 2?\n2. What is 3 + 3?",
+        name="page-one.txt",
+    )
+    api.post(f"/tutor/{session['id']}/homework/analyze", headers=headers)
+    with session_factory() as db:
+        SessionStateStore(db).save(
+            SessionState(
+                session_id=session["id"],
+                current_exercise_index=2,
+                awaiting_response=True,
+                response_target=ResponseTarget("exercise-2", "exercise"),
+            )
+        )
+        db.commit()
+
+    _upload_homework(
+        api,
+        headers,
+        session["id"],
+        text="1. What is 4 + 4?",
+        name="page-two.txt",
+    )
+    assert api.post(
+        f"/tutor/{session['id']}/homework/analyze", headers=headers
+    ).status_code == 200
+
+    with session_factory() as db:
+        state = SessionStateStore(db).load(session["id"])
+        assert state.current_exercise_index == 2
+        assert state.response_target == ResponseTarget("exercise-2", "exercise")
+
+
 def test_progress_updates_as_the_student_solves_exercises(api):
     headers = auth_headers(api)
     session = _start_homework(api, headers)

@@ -3,13 +3,14 @@ import re
 # Matches "Exercise 1:", "Question 2.", "Problem 3" etc. — how the vision/OCR
 # and document extractors transcribe most worksheets, and the label the
 # homework prompts themselves ask the tutor to use.
-_LABELED_EXERCISE = re.compile(r"(?im)^\s*(exercise|question|problem)\s+\d+\b")
-# Fallback for worksheets that just number items ("1.", "2)") with no label.
-_NUMBERED_ITEM = re.compile(r"(?m)^\s*\d+[.)]\s+\S")
 _LABELED_START = re.compile(
-    r"(?im)^\s*(?:exercise|question|problem)\s+(\d+)\b"
+    r"(?im)^[ \t]*(?:exercise|question|problem)\s+(\d+)\b"
 )
-_NUMBERED_START = re.compile(r"(?m)^\s*(\d+)[.)]\s+\S")
+# Worksheets and OCR commonly mix labels with bare numbering (for example,
+# ``Question 1`` followed by ``2.`` through ``7)``).  These are candidates even
+# when a labeled marker exists; ``_top_level_starts`` decides which candidates
+# are questions and which are nested numbered steps.
+_NUMBERED_START = re.compile(r"(?m)^[ \t]*(\d+)[.)]\s+\S")
 _EXPECTED_ANSWER = re.compile(
     r"(?i)\b(?:answer|solution)\s*[:=]\s*([^\n;]+?)\s*$"
 )
@@ -36,6 +37,57 @@ def normalize_arithmetic(text: str) -> str:
     return text
 
 
+def _top_level_starts(text: str) -> list[re.Match[str]]:
+    """Return ordered structural boundaries for top-level questions.
+
+    Labeled boundaries are authoritative.  A bare numbered boundary is merged
+    when its number fits strictly between the nearest labeled numbers (or
+    continues after the final label).  That recovers mixed OCR such as
+    ``Question 1`` + ``2.`` ... ``7.`` without turning the ``1.``/``2.`` working
+    steps inside ``Exercise 1`` into separate exercises before ``Exercise 2``.
+    """
+    labeled = list(_LABELED_START.finditer(text))
+    numbered = list(_NUMBERED_START.finditer(text))
+    if not labeled:
+        return numbered
+
+    starts: list[re.Match[str]] = list(labeled)
+    for candidate in numbered:
+        number = int(candidate.group(1))
+        previous = next(
+            (match for match in reversed(labeled) if match.start() < candidate.start()),
+            None,
+        )
+        following = next(
+            (match for match in labeled if match.start() > candidate.start()),
+            None,
+        )
+        lower = int(previous.group(1)) if previous is not None else None
+        upper = int(following.group(1)) if following is not None else None
+        # A local restart at/below the labeled number signals a numbered
+        # working-step list. Once seen, later larger step numbers in that same
+        # labeled region are nested too; without this, ``Exercise 1`` followed
+        # by steps 1, 2, 3 became three separate exercises. Mixed OCR such as
+        # ``Question 1`` followed directly by top-level 2, 3 has no restart and
+        # remains recoverable.
+        nested_restart = bool(
+            previous is not None
+            and lower is not None
+            and any(
+                previous.start() < match.start() < candidate.start()
+                and int(match.group(1)) <= lower
+                for match in numbered
+            )
+        )
+        if (
+            not nested_restart
+            and (lower is None or number > lower)
+            and (upper is None or number < upper)
+        ):
+            starts.append(candidate)
+    return sorted(starts, key=lambda match: match.start())
+
+
 def count_exercises(text: str) -> int:
     """Best-effort count of distinct exercises in a homework document.
 
@@ -45,12 +97,9 @@ def count_exercises(text: str) -> int:
     single free-form question still gets a sane total instead of zero."""
     if not text or not text.strip():
         return 0
-    labeled = len(_LABELED_EXERCISE.findall(text))
-    if labeled:
-        return labeled
-    numbered = len(_NUMBERED_ITEM.findall(text))
-    if numbered:
-        return numbered
+    starts = _top_level_starts(text)
+    if starts:
+        return len(starts)
     return 1
 
 
@@ -64,9 +113,7 @@ def segment_exercises(text: str) -> list[dict[str, str | None]]:
     """
     if not text or not text.strip():
         return []
-    matches = list(_LABELED_START.finditer(text))
-    if not matches:
-        matches = list(_NUMBERED_START.finditer(text))
+    matches = _top_level_starts(text)
     if not matches:
         matches = [None]
 

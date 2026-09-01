@@ -108,6 +108,73 @@ def test_http_turn_advances_after_final_answer_to_pending_substep(
         assert state.response_target == ResponseTarget("exercise-2", "exercise")
 
 
+@pytest.mark.parametrize(
+    "student_answer",
+    [
+        "3/4",
+        "I simplified it and got 3/4",
+        "the answer is 0.75",
+        "three quarters",
+    ],
+)
+def test_http_turn_recognizes_normal_numeric_answer_forms(
+    api, session_factory, monkeypatch, student_answer
+):
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", True)
+    headers, session = _prepare(api, _script())
+
+    response = api.post(
+        f"/tutor/{session['id']}/turn",
+        json={"content": student_answer, "turn_id": f"answer-{student_answer}"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    with session_factory() as db:
+        state = SessionStateStore(db).load(session["id"])
+        assert "exercise-1" in state.solved_refs
+        assert state.current_exercise_index == 2
+        assert state.response_target == ResponseTarget("exercise-2", "exercise")
+
+
+@pytest.mark.parametrize(
+    "help_text",
+    [
+        "I don't know help",
+        "can you help me?",
+        "Can you give me a hint?",  # exact HomeworkPage quick-action payload
+    ],
+)
+def test_typed_and_button_help_share_assistance_behavior(
+    api, session_factory, monkeypatch, help_text
+):
+    monkeypatch.setattr(settings, "AGENT_ENABLED_HOMEWORK", True)
+    llm = ScriptedAgentLLM(
+        [
+            AssistantTurn(
+                content="Let's make the first step smaller.",
+                pending_target=PendingTarget("exercise-1", "exercise"),
+            )
+        ]
+    )
+    headers, session = _prepare(api, llm)
+
+    response = api.post(
+        f"/tutor/{session['id']}/turn",
+        json={"content": help_text, "turn_id": f"help-{help_text}"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert "send just" not in response.json()["tutor_message"].lower()
+    assert "evaluateAnswer" not in {tool.name for tool in llm.calls[0]["tools"]}
+    with session_factory() as db:
+        state = SessionStateStore(db).load(session["id"])
+        assert state.current_exercise_index == 1
+        assert state.hint_level == 1
+        assert state.response_target == ResponseTarget("exercise-1", "exercise")
+
+
 def test_speech_stream_interleaves_tool_events_but_never_intermediate_text(
     api, session_factory, monkeypatch
 ):

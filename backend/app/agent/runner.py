@@ -243,9 +243,17 @@ class AgentRunner:
 
             if not turn.tool_calls:
                 final = turn.content or "".join(buffered)
+                final = self._cohere_help_reply(
+                    final, student_text, state, outline, turn.pending_target
+                )
                 if final:
                     yield AgentStreamEvent("text_delta", data=final)
-                state = self._record_pending(state, outline, turn.pending_target)
+                state = self._record_pending(
+                    state,
+                    outline,
+                    turn.pending_target,
+                    preserve_existing=is_plea_for_help(student_text),
+                )
                 self.session_store.save(state)
                 return
 
@@ -354,9 +362,17 @@ class AgentRunner:
             elif event.assistant is not None:
                 turn = event.assistant
         final = turn.content or "".join(buffered)
+        final = self._cohere_help_reply(
+            final, student_text, state, outline, turn.pending_target
+        )
         if final:
             yield AgentStreamEvent("text_delta", data=final)
-        state = self._record_pending(state, outline, turn.pending_target)
+        state = self._record_pending(
+            state,
+            outline,
+            turn.pending_target,
+            preserve_existing=is_plea_for_help(student_text),
+        )
         self.session_store.save(state)
 
     @staticmethod
@@ -423,12 +439,41 @@ class AgentRunner:
         return result
 
     @staticmethod
-    def _record_pending(state, outline, declared_target):
+    def _cohere_help_reply(final, student_text, state, outline, declared_target):
+        """Keep visible help on the same exercise as authoritative state.
+
+        The reducer already rejects an invalid pending target, but returning the
+        model's prose first still makes the UI appear to switch questions. If a
+        help reply declares another target or quotes another outline exercise,
+        replace it with a safe prompt grounded in the actual current question.
+        """
+        if not is_plea_for_help(student_text):
+            return final
+        current_index = state.current_exercise_index - 1
+        current = outline[current_index] if 0 <= current_index < len(outline) else None
+        if current is None:
+            return final
+        target_is_current = AgentRunner._target_is_current(
+            state, outline, declared_target
+        )
+        names_other_exercise = any(
+            item.ref != current.ref
+            and item.text.strip()
+            and item.text.strip().casefold() in final.casefold()
+            for item in outline
+        )
+        if not target_is_current or names_other_exercise:
+            return (
+                "Let's stay with the question you asked about:\n\n"
+                f"{current.text}\n\n"
+                "Which part feels unclear—the wording, the first step, or the method?"
+            )
+        return final
+
+    @staticmethod
+    def _target_is_current(state, outline, declared_target):
         if declared_target is None:
-            return StateReducer.set_pending(state, None)
-
-        from app.agent.schemas import ResponseTarget
-
+            return False
         current_index = state.current_exercise_index - 1
         current_ref = (
             outline[current_index].ref
@@ -436,19 +481,28 @@ class AgentRunner:
             else None
         )
         if declared_target.target_type == "exercise":
-            valid = declared_target.question_ref == current_ref
-        else:
-            # The model may propose that it is awaiting a substep, but it
-            # cannot mint an arbitrary state-changing identifier. The only
-            # valid virtual substep for this turn is derived by the server
-            # from the current exercise and hint progression.
-            expected_substep_ref = (
-                f"{current_ref}-step-{max(1, state.hint_level + 1)}"
-                if current_ref
-                else None
-            )
-            valid = declared_target.question_ref == expected_substep_ref
-        if not valid:
+            return declared_target.question_ref == current_ref
+        # The model may propose that it is awaiting a substep, but it cannot
+        # mint an arbitrary state-changing identifier. The only valid virtual
+        # substep for this turn is derived by the server from the current
+        # exercise and hint progression.
+        expected_substep_ref = (
+            f"{current_ref}-step-{max(1, state.hint_level + 1)}"
+            if current_ref
+            else None
+        )
+        return declared_target.question_ref == expected_substep_ref
+
+    @staticmethod
+    def _record_pending(
+        state, outline, declared_target, *, preserve_existing=False
+    ):
+        if declared_target is None:
+            return state if preserve_existing else StateReducer.set_pending(state, None)
+
+        from app.agent.schemas import ResponseTarget
+
+        if not AgentRunner._target_is_current(state, outline, declared_target):
             return state
         target = ResponseTarget(
             declared_target.question_ref, declared_target.target_type

@@ -34,6 +34,7 @@ from app.lesson.state import (
     _homework_agent_should_run,
     verify_chat_answer,
 )
+from app.lesson.reply_policy import ensure_tutor_reply_is_coherent
 from app.llm.provider import LLMError, LLMProvider
 from app.models.performance import Performance
 from app.models.agent_session_state import AgentSessionState
@@ -282,7 +283,14 @@ class TutorService:
             for m in materials
             if m.status == "ready" and m.extracted_text
         )
-        total = count_exercises(homework_text)
+        # Each upload/page owns its structural numbering. Counting after a raw
+        # concatenation makes a page that restarts at 1 collide with labels on
+        # the previous page.
+        total = sum(
+            count_exercises(m.extracted_text)
+            for m in materials
+            if m.status == "ready" and m.extracted_text
+        )
 
         messages = ctx.messages.get_specific_session_messages_history(session_id)
         message_count = len(messages)
@@ -387,8 +395,15 @@ class TutorService:
             )
         ctx = self._build_ctx(session)
         if settings.AGENT_ENABLED_HOMEWORK:
-            homework_text = ctx._homework_text() or ""
-            session.homework_outline = self._build_homework_outline(homework_text)
+            # Parsing is authoritative server state and must see the complete
+            # extraction. Only the LLM-facing TutorContext is prompt-budgeted.
+            session.homework_outline = []
+            for document in ctx.homework_source_documents():
+                for item in self._build_homework_outline(document):
+                    # Page-local question numbers may restart; refs are global
+                    # to the session and assigned only after each page parses.
+                    item["ref"] = f"exercise-{len(session.homework_outline) + 1}"
+                    session.homework_outline.append(item)
             for item in session.homework_outline:
                 item["skill"] = session.subtopic or session.topic
         try:
@@ -402,11 +417,35 @@ class TutorService:
 
             store = SessionStateStore(self.db)
             state = store.load(session.id)
-            first = session.homework_outline[0]
-            store.save(
-                StateReducer.set_pending(
-                    state, ResponseTarget(first["ref"], first.get("target_type", "exercise"))
+            current_index = state.current_exercise_index - 1
+            current = (
+                session.homework_outline[current_index]
+                if 0 <= current_index < len(session.homework_outline)
+                else None
+            )
+            target = None
+            if current is not None:
+                current_ref = current["ref"]
+                existing = state.response_target
+                existing_is_current = bool(
+                    existing
+                    and (
+                        existing.question_ref == current_ref
+                        or (
+                            existing.target_type == "substep"
+                            and existing.question_ref.startswith(f"{current_ref}-step-")
+                        )
+                    )
                 )
+                target = (
+                    existing
+                    if existing_is_current
+                    else ResponseTarget(
+                        current_ref, current.get("target_type", "exercise")
+                    )
+                )
+            store.save(
+                StateReducer.set_pending(state, target)
             )
         self.db.commit()
         return TurnResult(tutor_message=reply or "", phase=session.phase)
@@ -566,9 +605,20 @@ class TutorService:
                                     ensure_ascii=False,
                                 ) + "\n"
                 else:
-                    for delta in self.llm.chat_reply_stream(
+                    reply_stream = self.llm.chat_reply_stream(
                         tutor_ctx, annotated, verification=verdict
-                    ):
+                    )
+                    # A verified answer is server-held data, so the same
+                    # deterministic guard the non-streaming path applies must
+                    # also gate what the browser ever sees. Buffering the reply
+                    # is what makes that possible for a streamed turn.
+                    if isinstance(ctx.state, TeachingState):
+                        raw = "".join(reply_stream).strip()
+                        guarded = ensure_tutor_reply_is_coherent(
+                            raw, verdict, tutor_ctx.recent_messages
+                        )
+                        reply_stream = iter((guarded,))
+                    for delta in reply_stream:
                         chunks.append(delta)
                         if ndjson_events:
                             yield json.dumps(
@@ -674,18 +724,41 @@ class TutorService:
             def render_chunk_audio(chunk_text: str) -> bytes | None:
                 # Runs on a worker thread: network TTS only, never touches the DB.
                 mark("first_tts_request_started")
+                for attempt in range(2):
+                    try:
+                        parts: list[bytes] = []
+                        for b in voice.iter_speech_audio(chunk_text):
+                            if b:
+                                mark("first_audio_byte_received")
+                                parts.append(b)
+                        return b"".join(parts) if parts else None
+                    except VoiceServiceError:
+                        if attempt == 0:
+                            log.warning(
+                                "tts chunk failed in speech-stream session_id=%s; retrying",
+                                session_id,
+                            )
+                        else:
+                            log.warning(
+                                "tts chunk retry failed in speech-stream session_id=%s",
+                                session_id,
+                            )
+                # A streaming transport can fail while ordinary synthesis is
+                # still healthy. Recover only this missing phrase, after its
+                # streamed bytes were discarded, so previously emitted chunks
+                # are never replayed and the response is still spoken once.
                 try:
-                    parts: list[bytes] = []
-                    for b in voice.iter_speech_audio(chunk_text):
-                        if b:
-                            mark("first_audio_byte_received")
-                            parts.append(b)
-                    return b"".join(parts) if parts else None
-                except VoiceServiceError:
+                    encoded = voice.synthesize_speech(chunk_text)
+                    audio = base64.b64decode(encoded, validate=True)
+                    if audio:
+                        mark("first_audio_byte_received")
+                        return audio
+                except Exception:  # noqa: BLE001 - final TTS fallback is best-effort
                     log.warning(
-                        "tts chunk failed in speech-stream session_id=%s", session_id
+                        "tts chunk fallback failed in speech-stream session_id=%s",
+                        session_id,
                     )
-                    return None
+                return None
 
             def emit_chunk(chunk_id: int, audio: bytes | None) -> Iterator[str]:
                 if not audio:
@@ -730,9 +803,18 @@ class TutorService:
                             )
                     from app.llm.tooling import AgentStreamEvent
 
-                    for legacy_delta in self.llm.chat_reply_stream(
+                    legacy_stream = self.llm.chat_reply_stream(
                         tutor_ctx, annotated, verification=verdict
-                    ):
+                    )
+                    # See the text-stream path above. The guarded text is what
+                    # both the browser and the TTS chunker consume.
+                    if isinstance(ctx.state, TeachingState):
+                        raw = "".join(legacy_stream).strip()
+                        guarded = ensure_tutor_reply_is_coherent(
+                            raw, verdict, tutor_ctx.recent_messages
+                        )
+                        legacy_stream = iter((guarded,))
+                    for legacy_delta in legacy_stream:
                         yield AgentStreamEvent("text_delta", data=legacy_delta)
 
                 for brain_event in brain_events():
